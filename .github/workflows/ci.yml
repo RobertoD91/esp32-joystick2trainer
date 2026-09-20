@@ -86,3 +86,43 @@ jobs:
           name: esp32-joystick2trainer-esp32s3-${{ github.sha }}
           path: out/
           retention-days: 30
+
+  pages:
+    name: Deploy web flasher
+    # Only publish firmware that passed every check, from the main branch.
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    needs: [format, unit-tests, firmware]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: esp32-joystick2trainer-esp32s3-${{ github.sha }}
+          path: firmware
+      - name: Assemble site
+        run: |
+          VERSION="$(git describe --tags --always --dirty)"
+          mkdir -p site/firmware
+          cp web/index.html site/
+          sed "s/__VERSION__/${VERSION}/" web/manifest.json > site/manifest.json
+          cp firmware/bootloader.bin firmware/partitions.bin firmware/firmware.bin site/firmware/
+          cat > site/build-info.json <<EOF
+          {"version": "${VERSION}", "commit": "${GITHUB_SHA}", "date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+          EOF
+          touch site/.nojekyll
+          ls -la site site/firmware
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4

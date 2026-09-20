@@ -187,6 +187,13 @@ pio test -e native                       # hardware independent unit tests (host
 CI builds every push and publishes `firmware.bin`, `bootloader.bin` and `partitions.bin` as a
 workflow artifact; they can be flashed with `esptool.py` (offsets 0x0, 0x8000, 0x10000).
 
+### Flash from the browser
+
+No toolchain needed: open **https://robertod91.github.io/esp32-joystick2trainer/** in Chrome or
+Edge, connect the board's UART port and click *Connect*. The page (source in `web/`) is
+redeployed by CI from `main` only after the format check, the unit tests and the firmware build
+have passed, so it always serves a firmware that went through the whole pipeline.
+
 ## Configuration
 
 Open the console (`pio device monitor` or any terminal at 115200 baud on the UART port) and type

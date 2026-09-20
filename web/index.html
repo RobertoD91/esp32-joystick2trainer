@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>esp32-joystick2trainer web flasher</title>
+  <meta name="description" content="Flash the esp32-joystick2trainer firmware to an ESP32-S3 from the browser.">
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f6f7f9;
+      --fg: #1c1f24;
+      --muted: #5b6270;
+      --card: #ffffff;
+      --line: #dfe3e8;
+      --accent: #0b6bcb;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #14161a;
+        --fg: #e6e8eb;
+        --muted: #9aa3b0;
+        --card: #1d2026;
+        --line: #2e3238;
+        --accent: #5aa7ff;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    main { max-width: 720px; margin: 0 auto; padding: 32px 16px 64px; }
+    h1 { font-size: 1.6rem; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 24px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .card h2 { font-size: 1.05rem; margin: 0 0 12px; }
+    ol { padding-left: 20px; margin: 0; }
+    li { margin-bottom: 6px; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92em; }
+    a { color: var(--accent); }
+    .build { color: var(--muted); font-size: 0.9rem; margin-top: 12px; }
+    .warn { color: #b45309; }
+    esp-web-install-button { display: inline-block; margin: 8px 0; }
+    esp-web-install-button::part(button) {
+      background: var(--accent);
+      color: #fff;
+      border: 0;
+      border-radius: 8px;
+      padding: 10px 18px;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    footer { color: var(--muted); font-size: 0.85rem; margin-top: 24px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>esp32-joystick2trainer</h1>
+  <p class="sub">USB HID joystick → SBUS / CPPM trainer bridge for EdgeTX radios, running on an ESP32-S3.</p>
+
+  <section class="card">
+    <h2>Flash the latest firmware</h2>
+    <p>Built automatically from the <code>main</code> branch whenever the CI pipeline passes.</p>
+    <esp-web-install-button manifest="manifest.json">
+      <span slot="unsupported" class="warn">
+        Your browser does not support Web Serial. Use Chrome, Edge or another Chromium based browser on a desktop.
+      </span>
+      <span slot="not-allowed" class="warn">
+        Web Serial is only available on secure (HTTPS) pages.
+      </span>
+    </esp-web-install-button>
+    <div class="build" id="build">Loading build information…</div>
+  </section>
+
+  <section class="card">
+    <h2>How to</h2>
+    <ol>
+      <li>Connect the board's <strong>UART</strong> USB connector (the USB-to-serial bridge) to the computer, <em>not</em> the native USB port that will host the joystick.</li>
+      <li>Click <strong>Connect</strong>, pick the serial port of the board and choose <em>Install</em>. Tick "erase device" the first time to start from a clean configuration.</li>
+      <li>If the port does not show up or the connection fails, hold <strong>BOOT</strong>, tap <strong>RESET</strong>, release <strong>BOOT</strong> and try again.</li>
+      <li>After flashing, open the serial console (115200 baud) from the same dialog or with <code>pio device monitor</code> and type <code>help</code> to configure the mapping.</li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <h2>Wiring reminder</h2>
+    <p>Defaults: SBUS on <code>GPIO17</code>, CPPM on <code>GPIO18</code>, ground to ground. The joystick needs 5&nbsp;V on the native USB port (bridge the <code>USB-OTG</code> pads on the DevKitC-1).
+    Wiring and EdgeTX setup for the TX16S MKII are in the
+    <a href="https://github.com/RobertoD91/esp32-joystick2trainer#wiring-to-the-tx16s-mkii">README</a>.</p>
+  </section>
+
+  <footer>
+    <a href="https://github.com/RobertoD91/esp32-joystick2trainer">Source code</a> ·
+    <a href="https://github.com/RobertoD91/esp32-joystick2trainer/actions/workflows/ci.yml">CI</a> ·
+    MIT license · Flashing powered by <a href="https://esphome.github.io/esp-web-tools/">ESP Web Tools</a>
+  </footer>
+</main>
+
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<script>
+  fetch('build-info.json', { cache: 'no-store' })
+    .then(r => r.ok ? r.json() : Promise.reject(r.status))
+    .then(info => {
+      const el = document.getElementById('build');
+      const sha = info.commit ? info.commit.slice(0, 7) : '?';
+      const link = info.commit
+        ? `<a href="https://github.com/RobertoD91/esp32-joystick2trainer/commit/${info.commit}">${sha}</a>`
+        : sha;
+      el.innerHTML = `Version <code>${info.version}</code> · commit ${link} · built ${info.date}`;
+    })
+    .catch(() => {
+      document.getElementById('build').textContent = 'Build information not available.';
+    });
+</script>
+</body>
+</html>

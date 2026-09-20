@@ -189,8 +189,9 @@ workflow artifact; they can be flashed with `esptool.py` (offsets 0x0, 0x8000, 0
 
 ### Flash from the browser
 
-No toolchain needed: open **https://robertod91.github.io/esp32-joystick2trainer/** in Chrome or
-Edge, connect the board's UART port and click *Connect*. The page (source in `web/`) is
+No toolchain needed: open **https://robertodisanto.it/esp32-joystick2trainer/** in Chrome or
+Edge, connect the board's UART port and click *Connect* (the page must be loaded over HTTPS,
+Web Serial is not available on plain HTTP). The page (source in `web/`) is
 redeployed by CI from `main` only after the format check, the unit tests and the firmware build
 have passed, so it always serves a firmware that went through the whole pipeline.
 

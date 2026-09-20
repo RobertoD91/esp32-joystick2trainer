@@ -67,19 +67,32 @@ device) reports are ignored, only its joystick input report is used.
 | Item | Notes |
 |------|-------|
 | ESP32-S3 dev board | Tested build target: `esp32-s3-devkitc-1`. Any ESP32-S3 board that exposes the **native USB** pins (GPIO19/20) works. |
-| USB OTG adapter | USB-C male to USB-A female, to plug the joystick into the board's "USB" (native) port. |
+| USB OTG cable **with power input** | Micro-USB (USB-C on some boards) OTG host plug + USB-A female for the joystick + a power input. See [Powering the joystick](#powering-the-joystick): a plain OTG adapter is not enough on the DevKitC-1. |
 | USB-to-UART link | The DevKitC-1's second connector labelled "UART"; used for flashing, logs and the configuration console. |
 | 3.5 mm TRS plug | For the CPPM trainer input of the radio. |
 | Dupont wires / JR pins | For the SBUS input (module bay S.PORT pin or AUX serial connector). |
 
 ### Powering the joystick
 
-The joystick must receive **5 V on VBUS** from the host connector. On the ESP32-S3-DevKitC-1
-the native USB connector does not supply 5 V unless the **`USB-OTG` solder pads** on the board are
-bridged (check the Espressif user guide of your board revision). Alternatives: a powered USB
-OTG adapter/hub, or feed 5 V to the joystick connector yourself. The SideWinder FFB2 declares
-100 mA over USB; it has its own mains power supply for the motors, which must be connected for
-the stick to enumerate reliably.
+The joystick must receive **5 V on VBUS** from the host connector, and the
+**ESP32-S3-DevKitC-1 cannot provide it by design**: in the board schematic the VBUS pin of the
+native "USB" connector (J4) reaches the 5 V rail only through the Schottky diode D7, oriented
+from the connector *into* the board. The board can be powered from that port, but 5 V never
+flows out to a connected device, and there is no jumper or solder pad to change that. The
+firmware therefore enumerates nothing until VBUS is supplied in one of these ways:
+
+1. **OTG Y-cable with power input** (no soldering, recommended): a "micro-USB OTG host + power"
+   cable. Its power socket takes 5 V from a USB charger, its USB-A socket feeds the joystick, and
+   the same 5 V also enters the board through D7, so one supply powers everything while the
+   UART port stays free for the console.
+2. **Wire from the header pin `5V` to the VBUS pad of J4**, or a solder bridge across D7. The
+   board is then powered from the UART port or the `5V` pin. With D7 bridged, never connect a
+   PC to the native port while the board is powered from another source.
+3. **USB-A female breakout on the header**: VBUS to `5V`, GND to `GND`, D+ to `GPIO20`, D- to
+   `GPIO19`, short twisted wires; the on-board connector is left unused.
+
+The SideWinder FFB2 declares 100 mA over USB; it also has its own mains power supply for the
+motors, which must be connected for the stick to enumerate reliably.
 
 Power the ESP32 from its UART/USB connector or from a clean 5 V source. **Do not** power it from
 the radio's module bay `BATT` pin: that pin carries the battery voltage (up to 8.4 V).

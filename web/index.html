@@ -93,7 +93,7 @@
 
   <section class="card">
     <h2>Wiring reminder</h2>
-    <p>Defaults: SBUS on <code>GPIO17</code>, CPPM on <code>GPIO18</code>, ground to ground. The joystick needs 5&nbsp;V on the native USB port (bridge the <code>USB-OTG</code> pads on the DevKitC-1).
+    <p>Defaults: SBUS on <code>GPIO17</code>, CPPM on <code>GPIO18</code>, ground to ground. The joystick needs 5&nbsp;V on the native USB port, which the DevKitC-1 cannot supply by itself (diode D7 blocks it): use an OTG Y-cable with a power input, or wire the <code>5V</code> pin to VBUS.
     Wiring and EdgeTX setup for the TX16S MKII are in the
     <a href="https://github.com/RobertoD91/esp32-joystick2trainer#wiring-to-the-tx16s-mkii">README</a>.</p>
   </section>

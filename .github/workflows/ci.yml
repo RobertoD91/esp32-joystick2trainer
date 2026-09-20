@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format:
+    name: clang-format check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check formatting
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq clang-format-18
+          find src lib test -name '*.cpp' -o -name '*.hpp' | grep -v 'test/fixtures' \
+            | xargs clang-format-18 --dry-run --Werror
+
+  unit-tests:
+    name: Host unit tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-native-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+      - name: Run tests
+        run: pio test -e native -v
+
+  firmware:
+    name: ESP32-S3 firmware
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # ESP-IDF embeds `git describe` in the app descriptor
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Cache PlatformIO packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/packages
+            ~/.platformio/platforms
+            ~/.platformio/.cache
+          key: pio-esp32s3-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-esp32s3-${{ runner.os }}-
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+      - name: Build
+        run: pio run -e esp32s3
+      - name: Size report
+        run: pio run -e esp32s3 -t size | tail -n 40
+      - name: Collect artifacts
+        run: |
+          mkdir -p out
+          cp .pio/build/esp32s3/firmware.bin out/
+          cp .pio/build/esp32s3/bootloader.bin out/
+          cp .pio/build/esp32s3/partitions.bin out/
+          cp .pio/build/esp32s3/firmware.elf out/
+          cat > out/FLASH.md <<'EOF'
+          Flash with esptool (offsets for the ESP32-S3 default partition layout):
+
+              esptool.py --chip esp32s3 -p /dev/ttyUSB0 -b 460800 write_flash \
+                0x0000 bootloader.bin 0x8000 partitions.bin 0x10000 firmware.bin
+
+          or with PlatformIO: `pio run -e esp32s3 -t upload`.
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: esp32-joystick2trainer-esp32s3-${{ github.sha }}
+          path: out/
+          retention-days: 30

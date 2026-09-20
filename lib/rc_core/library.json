@@ -1,0 +1,10 @@
+{
+  "name": "rc_core",
+  "version": "1.0.0",
+  "description": "Hardware independent RC core: SBUS/CPPM encoders, channel mapping and configuration model",
+  "license": "MIT",
+  "build": {
+    "srcDir": "src",
+    "includeDir": "include"
+  }
+}

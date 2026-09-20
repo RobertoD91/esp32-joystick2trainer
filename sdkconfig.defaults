@@ -1,0 +1,36 @@
+# ESP-IDF configuration overrides for esp32-joystick2trainer.
+# Everything not listed here keeps the ESP-IDF default. Regenerate the full sdkconfig by
+# deleting sdkconfig.esp32s3 (PlatformIO recreates it from this file).
+
+CONFIG_IDF_TARGET="esp32s3"
+
+# ---- Flash / partitions -------------------------------------------------------------
+# Every ESP32-S3-DevKitC-1 variant has at least 8 MB. Change to 4MB for other boards.
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_PARTITION_TABLE_SINGLE_APP=y
+
+# ---- USB host --------------------------------------------------------------------------
+# The SideWinder FFB2 report descriptor is 1343 bytes; the default 256-byte control
+# transfer buffer cannot fetch it.
+CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE=2048
+# Allow joysticks plugged in behind a hub.
+CONFIG_USB_HOST_HUBS_SUPPORTED=y
+
+# ---- Console ---------------------------------------------------------------------------
+# The native USB port is the host port, so the console must be the UART0 bridge.
+# Disable the secondary USB-Serial-JTAG console: it shares the USB PHY with the OTG host.
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+
+# ---- RTOS / timing ---------------------------------------------------------------------
+CONFIG_FREERTOS_HZ=1000
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=6144
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=5
+
+# ---- Logging ---------------------------------------------------------------------------
+CONFIG_BOOTLOADER_LOG_LEVEL_WARN=y
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# ---- C++ -----------------------------------------------------------------------------------
+CONFIG_COMPILER_CXX_EXCEPTIONS=n
+CONFIG_COMPILER_CXX_RTTI=n

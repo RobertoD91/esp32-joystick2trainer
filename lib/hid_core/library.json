@@ -1,0 +1,13 @@
+{
+  "name": "hid_core",
+  "version": "1.0.0",
+  "description": "Allocation-free USB HID report descriptor parser and joystick report decoder",
+  "license": "MIT",
+  "dependencies": {
+    "rc_core": "*"
+  },
+  "build": {
+    "srcDir": "src",
+    "includeDir": "include"
+  }
+}

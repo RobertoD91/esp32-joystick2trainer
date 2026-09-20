@@ -22,9 +22,11 @@ configurable channel mapping (source, invert, dead band, expo, end points, trim,
 Force feedback is intentionally out of scope for now: the SideWinder's PID (physical interface
 device) reports are ignored, only its joystick input report is used.
 
-> **Status:** the code builds, the hardware independent parts are covered by unit tests run in CI,
-> and the USB/RMT/UART layers follow Espressif's reference patterns. It has **not yet been
-> validated on a physical TX16S MKII**; feedback from the first users is very welcome.
+> **Status (v0.9.0):** verified on real hardware with a SideWinder Force Feedback 2, an
+> ESP32-S3-DevKitC-1 and a RadioMaster TX16S MKII running EdgeTX, using the **SBUS output on
+> the radio's AUX serial port** (`Master/Serial`). The CPPM output on the trainer jack and the
+> SBUS input on the module bay S.PORT pin are implemented but **not yet tested on the radio**.
+> See [Tested setups](#tested-setups).
 
 ## Contents
 
@@ -126,7 +128,24 @@ EdgeTX uses one trainer mode per model, so in practice you connect **either** th
 **or** the SBUS output to the radio. Both are generated all the time; the other one is free for a
 second radio or a simulator dongle.
 
-### CPPM on the trainer jack (recommended, simplest)
+### Tested setups
+
+| Path | Radio side | Bridge side | Result |
+|------|-----------|-------------|--------|
+| **SBUS on AUX serial port** | TX16S MKII, EdgeTX, AUX port on the bottom set to `SBUS Trainer`, model in `Master/Serial`; external bay occupied by an ExpressLRS module, internal multi-protocol module | GPIO17 → AUX RX, GND → GND, **`set sbus.inverted 0`** + `save` | **Works.** Trainer channels follow the stick. |
+| CPPM on the trainer jack | `Master/Jack` | GPIO18 → tip, GND → sleeve | Not yet tested (no jack at hand). Encoder timing is covered by unit tests against EdgeTX's decoder rules. |
+| SBUS on module bay S.PORT | `Master/SBUS Module`, External RF off | GPIO17 → pin 5, `sbus.inverted 1` | Not yet tested (bay occupied by the ELRS module). |
+
+Lessons learned during the first bring-up:
+
+- The DevKitC-1 does not power the joystick from its native USB port; a powered OTG Y-cable
+  fixed it (see [Powering the joystick](#powering-the-joystick)).
+- The **AUX port wants UART polarity**: with the default `sbus.inverted 1` the radio sees
+  nothing at all. `set sbus.inverted 0` takes effect immediately, then `save`.
+- With the default `failsafe.mode stop` nothing is emitted until the joystick sends its first
+  report; the SideWinder only reports on change, so move the stick once and check `status`.
+
+### CPPM on the trainer jack (not yet verified on the radio)
 
 ```text
 ESP32-S3 GPIO18 ──────► tip    (PPM)      3.5 mm TRS plug
@@ -151,15 +170,23 @@ ESP32-S3 GND    ──────► pin 4 (GND)
 Keep `sbus.inverted = 1` (standard SBUS). Set the model's External RF to **OFF** or the mode is
 not offered. Never connect pin 3 (BATT) to the ESP32.
 
-### SBUS on the AUX serial port
+### SBUS on the AUX serial port (verified)
 
-Set `sbus.inverted = 0` (the STM32F4 in the TX16S cannot invert its UART input) and connect the
-bridge's SBUS GPIO to the AUX RX pin and ground to ground. Do not exceed 3.3 V on the AUX pins.
+```text
+ESP32-S3 GPIO17 ──────► AUX port RX pin (the radio's receive line)
+ESP32-S3 GND    ──────► AUX port GND
+                        AUX port 5V and TX left unconnected
+```
+
+Set **`sbus.inverted = 0`** (the STM32F4 in the TX16S cannot invert its UART input, so the AUX
+port expects idle-high UART polarity) and `save`. Do not exceed 3.3 V on the AUX pins. This path
+works with any module in the external bay (it was verified with an ExpressLRS module installed).
 See [docs/edgetx-tx16s.md](docs/edgetx-tx16s.md) for the EdgeTX serial-port settings.
 
 ## EdgeTX setup
 
-1. **Radio Settings → Hardware** (only for the AUX variant): Serial ports → AUX1 → `SBUS Trainer`.
+1. **Radio Settings → Hardware** (only for the AUX variant): Serial ports → the AUX port you
+   wired (AUX1 or AUX2) → `SBUS Trainer`.
 2. **Model Settings → Trainer → Mode**: `Master/Jack` (CPPM), `Master/SBUS Module` or
    `Master/Serial`.
 3. **Radio Settings → Trainer**: for each stick choose the mode (`Add` or `Replace`), the source
@@ -298,8 +325,8 @@ The full evaluation of the existing projects is in [docs/research.md](docs/resea
 - No force feedback (PID output reports are not sent). The SideWinder's centring spring is
   therefore inactive; the axes still report normally.
 - One joystick at a time (the first HID interface with joystick usages wins).
-- Not yet validated on real hardware; the first item on the roadmap is a bench test with a
-  TX16S MKII (jack + S.PORT) and a logic analyser capture of both outputs.
+- Only the SBUS-on-AUX path has been validated on a radio so far; the CPPM jack output and
+  the S.PORT path still need a bench test (see [Tested setups](#tested-setups)).
 - Possible extensions: per-device profiles keyed on VID/PID, a Web/USB configuration UI, CRSF
   output, multiple joysticks merged into one frame.
 

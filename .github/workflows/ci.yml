@@ -126,3 +126,41 @@ jobs:
           path: site
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  release:
+    name: GitHub release
+    # A pushed tag such as v0.9.0 turns the validated build into a release with the binaries attached.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [format, unit-tests, firmware]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: esp32-joystick2trainer-esp32s3-${{ github.sha }}
+          path: firmware
+      - name: Package release assets
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          mkdir -p release
+          for f in bootloader.bin partitions.bin firmware.bin firmware.elf; do
+            cp "firmware/$f" "release/esp32-joystick2trainer-${VERSION}-esp32s3-$f"
+          done
+          cp firmware/FLASH.md release/
+          (cd release && sha256sum * > SHA256SUMS.txt)
+          # Release notes: the CHANGELOG section of this version, if present.
+          awk -v ver="${VERSION#v}" '
+            $0 ~ "^## \\[" ver "\\]" { on=1; next }
+            on && /^## \[/ { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then echo "Release ${VERSION}" > notes.md; fi
+          printf '\n---\nFlash from the browser: https://robertodisanto.it/esp32-joystick2trainer/\n' >> notes.md
+          cat notes.md
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body_path: notes.md
+          files: release/*

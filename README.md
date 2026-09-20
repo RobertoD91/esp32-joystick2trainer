@@ -3,6 +3,15 @@
 [![CI](https://github.com/RobertoD91/esp32-joystick2trainer/actions/workflows/ci.yml/badge.svg)](https://github.com/RobertoD91/esp32-joystick2trainer/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+> ⚠️ **AI-generated code.** This project (firmware, tests, CI and documentation) was written by
+> an AI model, **Claude Fable 5.1** running in Claude Code, from a human specification and with
+> human review and bench testing. Read the code before trusting it with anything that flies, and
+> report anything odd in the issues.
+
+[![Demo video: USB joystick driving a TX16S MKII through esp32-joystick2trainer](https://img.youtube.com/vi/ipx99-Ts33Q/hqdefault.jpg)](https://www.youtube.com/shorts/ipx99-Ts33Q)
+
+*Click the image to watch the demo on YouTube.*
+
 Firmware for the **ESP32-S3** that turns a wired **USB HID joystick** into a trainer input for
 **EdgeTX** radios such as the **RadioMaster TX16S MKII**. The ESP32-S3 acts as a native USB host,
 decodes the joystick's HID reports and emits **SBUS** and **CPPM** at the same time on two GPIOs.
@@ -329,6 +338,28 @@ The full evaluation of the existing projects is in [docs/research.md](docs/resea
   the S.PORT path still need a bench test (see [Tested setups](#tested-setups)).
 - Possible extensions: per-device profiles keyed on VID/PID, a Web/USB configuration UI, CRSF
   output, multiple joysticks merged into one frame.
+
+## Acknowledgements
+
+No code was copied from other projects, but the design was shaped by studying these repositories
+(the detailed evaluation is in [docs/research.md](docs/research.md)):
+
+- [Doctor-Proton/USB_to_RC](https://github.com/Doctor-Proton/USB_to_RC) — descriptor-driven HID parsing plus a mapping layer, on RP2040
+- [f2knpw/Radiomaster_TX16s_buddy_box](https://github.com/f2knpw/Radiomaster_TX16s_buddy_box) — ESP32-S3 USB host joystick for a TX16S buddy box
+- [tanakamasayuki/EspUsbHost](https://github.com/tanakamasayuki/EspUsbHost) — Arduino USB host library for the ESP32-S2/S3
+- [esp32beans/ESP32_USB_Host_HID](https://github.com/esp32beans/ESP32_USB_Host_HID) — Espressif HID host driver examples for Arduino
+- [DzikuVx/DiyMotionController](https://github.com/DzikuVx/DiyMotionController) — ESP32 PPM/SBUS output patterns
+- [junekyoopark/arduino_hid_joystick](https://github.com/junekyoopark/arduino_hid_joystick) — USB joystick to PPM on AVR
+- [lexfp/le3dpToPPM](https://github.com/lexfp/le3dpToPPM) — Logitech Extreme 3D Pro to PPM
+- [drorgl/USBJoystickPPM](https://github.com/drorgl/USBJoystickPPM) — USB joystick to PPM on AVR
+- [DroneMesh/USB_PPM](https://github.com/DroneMesh/USB_PPM) — PS3 controller to PPM
+- [dmpriso/joystick_to_ppm](https://github.com/dmpriso/joystick_to_ppm) — Linux joystick to PPM through an AVR
+- [bolderflight/sbus](https://github.com/bolderflight/sbus) — reference SBUS encoder/decoder
+- [blopa1961/SBUS](https://github.com/blopa1961/SBUS) — SBUS to PPM/PWM with a double-buffered timer
+- [KeesBlokland/RadioMaster16S](https://github.com/KeesBlokland/RadioMaster16S) — feeding SBUS into a TX16S over ESP-NOW
+
+Thanks also to the EdgeTX project, whose sources answered most of the trainer-input questions,
+and to Espressif for the `usb_host_hid` component and the ESP Web Tools authors for the flasher.
 
 ## License
 

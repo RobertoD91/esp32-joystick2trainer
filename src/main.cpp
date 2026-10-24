@@ -3,10 +3,12 @@
 //
 // Data flow:
 //   USB host (UsbJoystick) -> hid_core decoder -> InputHub (mapping) -> SbusOutput (UART)
-//                                                                     -> CppmOutput (RMT)
+//                          |                                          -> CppmOutput (RMT)
+//                          +-> FfbController (PID force feedback: centring spring) -> USB OUT
 #include "app/config_store.hpp"
 #include "app/console.hpp"
 #include "app/cppm_output.hpp"
+#include "app/ffb.hpp"
 #include "app/input_hub.hpp"
 #include "app/sbus_output.hpp"
 #include "app/status_led.hpp"
@@ -26,8 +28,9 @@ extern "C" void app_main(void) {
     static app::SbusOutput sbus(config, hub);
     static app::CppmOutput cppm(config, hub);
     static app::UsbJoystick usb(hub);
+    static app::FfbController ffb(config);
     static app::StatusLed led(config, hub);
-    static app::ConsoleContext console_ctx{&config, &hub, &usb, &sbus, &cppm};
+    static app::ConsoleContext console_ctx{&config, &hub, &usb, &sbus, &cppm, &ffb};
 
     config.init();
 
@@ -37,6 +40,8 @@ extern "C" void app_main(void) {
     cppm.start();
     led.start();
 
+    ffb.start();
+    usb.attachFfb(&ffb);
     usb.start();
 
     app::startConsole(&console_ctx);

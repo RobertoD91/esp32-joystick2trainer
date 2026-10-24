@@ -6,6 +6,7 @@
 //   cppm.enabled cppm.gpio cppm.channels cppm.frame cppm.pulse cppm.inverted cppm.min cppm.max
 //   cppm.sync_min cppm.sync_max
 //   failsafe.mode (stop|hold|preset)  input.timeout (ms)  led.gpio  log.input
+//   ffb.enabled ffb.spring (0-100) ffb.gain (0-100) ffb.deadband (0-50)
 //   chN.src (none|const|axis:<name>|btn:<1-32>|hatx|haty)  N = 1..16
 //   chN.invert chN.toggle chN.deadband chN.expo chN.min chN.max chN.trim chN.failsafe
 #pragma once

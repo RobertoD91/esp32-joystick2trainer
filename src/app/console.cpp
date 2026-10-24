@@ -7,6 +7,7 @@
 
 #include "app/config_store.hpp"
 #include "app/cppm_output.hpp"
+#include "app/ffb.hpp"
 #include "app/input_hub.hpp"
 #include "app/sbus_output.hpp"
 #include "app/usb_joystick.hpp"
@@ -70,6 +71,9 @@ int cmdSet(int argc, char** argv) {
         return 1;
     }
     g_ctx->config->set(cfg);
+    if (std::strncmp(argv[1], "ffb.", 4) == 0 && g_ctx->ffb != nullptr) {
+        g_ctx->ffb->applyConfig();
+    }
     char value[32];
     rc::kv::get(cfg, argv[1], value, sizeof(value));
     std::printf("%s = %s%s\n", argv[1], value,
@@ -125,6 +129,20 @@ int cmdStatus(int, char**) {
                 static_cast<unsigned long>(g_ctx->sbus->framesSent()));
     std::printf("cppm       : %s, GPIO%d, %lu frames sent\n", g_ctx->cppm->running() ? "running" : "off", cfg.cppm.gpio,
                 static_cast<unsigned long>(g_ctx->cppm->framesSent()));
+    if (g_ctx->ffb != nullptr) {
+        const FfbController::Status f = g_ctx->ffb->status();
+        if (!f.device_connected) {
+            std::printf("ffb        : no device\n");
+        } else if (!f.pid_device) {
+            std::printf("ffb        : not a PID device (%s)\n", f.reason);
+        } else {
+            std::printf("ffb        : spring %u%% %s%s\n", f.spring_pct, f.spring_running ? "running" : "off",
+                        f.last_error[0] ? " (last error: " : "");
+            if (f.last_error[0]) {
+                std::printf("%s)\n", f.last_error);
+            }
+        }
+    }
     std::printf("config     : %s\n", g_ctx->config->loadedFromNvs() ? "from NVS" : "factory defaults");
     const rc::Frame f = g_ctx->hub->lastFrame();
     std::printf("channels   :");
@@ -196,6 +214,63 @@ int cmdMonitor(int argc, char** argv) {
     return 0;
 }
 
+int cmdFfb(int argc, char** argv) {
+    if (g_ctx->ffb == nullptr) {
+        std::printf("force feedback not available\n");
+        return 1;
+    }
+    if (argc >= 2 && std::strcmp(argv[1], "test") == 0) {
+        const int ms = argc >= 3 ? std::atoi(argv[2]) : 600;
+        if (!g_ctx->ffb->requestRumble(ms > 0 ? static_cast<uint32_t>(ms) : 600)) {
+            std::printf("no PID device connected\n");
+            return 1;
+        }
+        std::printf("vibration test queued (%d ms)\n", ms > 0 ? ms : 600);
+        return 0;
+    }
+    if (argc >= 2 && std::strcmp(argv[1], "apply") == 0) {
+        g_ctx->ffb->applyConfig();
+        std::printf("force feedback settings re-applied\n");
+        return 0;
+    }
+    if (argc >= 2) {
+        std::printf("usage: ffb [test [ms] | apply]\n");
+        return 1;
+    }
+    const FfbController::Status f = g_ctx->ffb->status();
+    const rc::Config cfg = g_ctx->config->get();
+    std::printf("config     : enabled %d, spring %u%%, gain %u%%, deadband %u%%\n", cfg.ffb.enabled, cfg.ffb.spring_pct,
+                cfg.ffb.gain_pct, cfg.ffb.deadband_pct);
+    if (!f.device_connected) {
+        std::printf("device     : none\n");
+        return 0;
+    }
+    if (!f.pid_device) {
+        std::printf("device     : connected, no PID force feedback (%s)\n", f.reason);
+        return 0;
+    }
+    std::printf("device     : PID, output reports via %s, init %s\n",
+                f.out_endpoint ? "interrupt OUT endpoint" : "control SET_REPORT", f.initialised ? "ok" : "FAILED");
+    std::printf("spring     : %u%% on block %d, %s\n", f.spring_pct, f.spring_block,
+                f.spring_running ? "running" : "stopped");
+    if (f.state_valid) {
+        std::printf(
+            "state      : actuators %s, power %s, safety switch %s, override %s, paused %s, playing %s "
+            "(block %d), %lu reports\n",
+            f.state.actuators_enabled ? "enabled" : "disabled", f.state.actuator_power ? "ok" : "OFF",
+            f.state.safety_switch ? "on" : "off", f.state.actuator_override ? "on" : "off",
+            f.state.device_paused ? "yes" : "no", f.state.effect_playing ? "yes" : "no", f.state.effect_block_index,
+            static_cast<unsigned long>(f.state_reports));
+    } else {
+        std::printf("state      : no PID state report received yet\n");
+    }
+    if (f.last_error[0]) {
+        std::printf("last error : %s\n", f.last_error);
+    }
+    std::printf("commands   : ffb test [ms]   set ffb.spring <0-100>   set ffb.gain <0-100>   set ffb.enabled 0/1\n");
+    return 0;
+}
+
 void registerCommand(const char* name, const char* help, const char* hint, esp_console_cmd_func_t func) {
     esp_console_cmd_t cmd = {};
     cmd.command = name;
@@ -226,6 +301,8 @@ void startConsole(ConsoleContext* ctx) {
     registerCommand("status", "Joystick, outputs and current channel values", nullptr, &cmdStatus);
     registerCommand("hid", "Dump the parsed HID report descriptor and axis bindings", nullptr, &cmdHid);
     registerCommand("monitor", "Print live input and channels for N seconds", "[seconds]", &cmdMonitor);
+    registerCommand("ffb", "Force feedback status, 'ffb test [ms]' vibration test, 'ffb apply'", "[test [ms]|apply]",
+                    &cmdFfb);
     registerCommand("reboot", "Restart the board", nullptr, &cmdReboot);
 
     ESP_ERROR_CHECK(esp_console_new_repl_stdio(&repl_cfg, &repl));

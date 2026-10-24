@@ -28,14 +28,17 @@ configurable channel mapping (source, invert, dead band, expo, end points, trim,
       └──►  CPPM  (RMT peripheral, no bit-banging)        ──►  GPIO 18
 ```
 
-Force feedback is intentionally out of scope for now: the SideWinder's PID (physical interface
-device) reports are ignored, only its joystick input report is used.
+Force feedback is used for one thing: the bridge creates the **centring spring** on the joystick
+(a USB HID PID effect; without it a SideWinder is loose) and offers a vibration test. Game-style
+effects are out of scope.
 
-> **Status (v0.9.0):** verified on real hardware with a SideWinder Force Feedback 2, an
-> ESP32-S3-DevKitC-1 and a RadioMaster TX16S MKII running EdgeTX, using the **SBUS output on
-> the radio's AUX serial port** (`Master/Serial`). The CPPM output on the trainer jack and the
-> SBUS input on the module bay S.PORT pin are implemented but **not yet tested on the radio**.
-> See [Tested setups](#tested-setups).
+> **Status:** flown. The firmware at commit `59b4e3c` (release v0.9.0 plus documentation
+> updates) was used for a **first real flight on 2026-10-24** with a SideWinder Force Feedback 2,
+> an ESP32-S3-DevKitC-1 and a RadioMaster TX16S MKII running EdgeTX, SBUS on the radio's AUX
+> serial port (`Master/Serial`): it worked without issues. The CPPM output on the trainer jack
+> and the SBUS input on the module bay S.PORT pin are implemented but **not yet tested on the
+> radio**, and the force feedback added afterwards still needs its first bench test. See
+> [Tested setups](#tested-setups).
 
 ## Contents
 
@@ -53,6 +56,9 @@ device) reports are ignored, only its joystick input report is used.
 
 - **Native USB host** on the ESP32-S3 (ESP-IDF `usb` host library + Espressif `usb_host_hid`
   class driver). No Bluetooth, no external USB host shield.
+- **Force feedback centring spring** for USB HID PID joysticks (SideWinder Force Feedback 2):
+  the stick returns to centre by itself; strength and gain are configurable, plus a vibration
+  test.
 - **Generic HID joystick support**: the report descriptor is parsed at run time, so any joystick
   or gamepad that follows the HID usage tables works (X/Y/Z/Rx/Ry/Rz/slider/dial/wheel,
   throttle/rudder/accelerator/brake, hat switch, up to 32 buttons, report IDs, array buttons).
@@ -141,9 +147,10 @@ second radio or a simulator dongle.
 
 | Path | Radio side | Bridge side | Result |
 |------|-----------|-------------|--------|
-| **SBUS on AUX serial port** | TX16S MKII, EdgeTX, AUX port on the bottom set to `SBUS Trainer`, model in `Master/Serial`; external bay occupied by an ExpressLRS module, internal multi-protocol module | GPIO17 → AUX RX, GND → GND, **`set sbus.inverted 0`** + `save` | **Works.** Trainer channels follow the stick. |
+| **SBUS on AUX serial port** | TX16S MKII, EdgeTX, AUX port on the bottom set to `SBUS Trainer`, model in `Master/Serial`; external bay occupied by an ExpressLRS module, internal multi-protocol module | GPIO17 → AUX RX, GND → GND, **`set sbus.inverted 0`** + `save` | **Works, flown.** Bench-verified on 2026-09-20, first flight on 2026-10-24 with the firmware of commit `59b4e3c`: the model was flown from the joystick through the trainer function without any issue. |
 | CPPM on the trainer jack | `Master/Jack` | GPIO18 → tip, GND → sleeve | Not yet tested (no jack at hand). Encoder timing is covered by unit tests against EdgeTX's decoder rules. |
 | SBUS on module bay S.PORT | `Master/SBUS Module`, External RF off | GPIO17 → pin 5, `sbus.inverted 1` | Not yet tested (bay occupied by the ELRS module). |
+| Force feedback (centring spring) | – | SideWinder FFB2 with its mains adapter connected | Implemented after the first flight, **not yet bench-tested**: the report sequence is verified against the real descriptor in the unit tests only. See [Force feedback](#force-feedback). |
 
 Lessons learned during the first bring-up:
 
@@ -277,15 +284,83 @@ save
 
 The complete key reference is in [docs/configuration.md](docs/configuration.md).
 
+## Force feedback
+
+A SideWinder Force Feedback 2 has no mechanical spring: the centring force is a *software
+effect* that the USB host has to create through the HID **PID** (Physical Interface Device)
+protocol, which is why the stick feels loose on a host that does not speak PID. The bridge now
+does what Windows and Linux do:
+
+1. On connection it parses the PID output/feature reports from the descriptor (the same parser
+   used for the joystick input), resets the device, enables the actuators and sets the device
+   gain.
+2. It creates a **spring** effect (Create New Effect → Block Load), uploads its parameters
+   (Set Effect with infinite duration, Set Condition for both axes with the configured
+   strength) and starts it. The stick then returns to centre by itself.
+3. `ffb test [ms]` plays a sine **vibration** for a moment: a quick way to check that the
+   actuators and the power supply are alive.
+
+| Key / command | Default | Meaning |
+|---------------|---------|---------|
+| `ffb.enabled` | 1 | master switch; 0 stops the spring and zeroes the device gain |
+| `ffb.spring` | 60 | spring strength 0..100 % (0 = no spring, the stick stays loose) |
+| `ffb.gain` | 100 | overall device gain 0..100 % |
+| `ffb.deadband` | 0 | zone around the centre without spring force, 0..50 % |
+| `ffb` | – | console: PID status, transport in use, actuator power, last error |
+| `ffb test [ms]` | 600 ms | console: vibration test |
+
+`set ffb.*` keys apply immediately (and persist with `save`). Output reports travel over the
+joystick's interrupt OUT endpoint when it has one (the SideWinder does), falling back to
+control-pipe SET_REPORT otherwise; this needed a small addition to Espressif's HID host driver,
+kept as a vendored copy in `components/usb_host_hid` (see its `NOTICE.md`).
+
+Requirements and caveats:
+
+- The SideWinder's **mains adapter must be connected**, otherwise the device reports
+  "actuator power off" (visible in `ffb`) and no force is produced.
+- Everything is generic PID, but only the SideWinder FFB2 descriptor has been exercised, and
+  only in unit tests so far: the first bench test is pending. If the spring does not engage,
+  `ffb` prints the step that failed.
+- Devices with proprietary force-feedback protocols (older Logitech wheels and sticks, Xbox
+  controllers) are not PID and are not supported.
+
+## Device support and the "universal database" question
+
+The firmware is already *descriptor driven*: any joystick, gamepad or wheel that is a standard
+USB HID device is decoded from its own report descriptor, which is the same mechanism Windows
+and Linux use. There is no central "joystick database" in Linux for HID devices because none is
+needed; what Linux carries is a short list of per-device **quirks** (`drivers/hid/hid-quirks.c`,
+`hid-ids.h`) plus dedicated drivers for non-HID controllers. For this project that translates
+into three categories:
+
+| Device class | Examples | Status |
+|--------------|----------|--------|
+| USB HID joystick/gamepad (report protocol) | SideWinder FFB2, Thrustmaster T.16000M, Logitech Extreme 3D Pro, PlayStation 4/5 controllers (wired), most generic gamepads | **Supported** by the generic parser; mapping adjusted with `set chN.src …` |
+| USB HID with PID force feedback | SideWinder FFB2, Logitech MOMO/Driving Force (PID mode), Thrustmaster T.Flight/Hotas FFB | Spring/vibration supported through the generic PID client |
+| Non-HID vendor protocols | Xbox 360/One/Series controllers (XInput/GIP), some Logitech "classic" FF devices | **Not supported**: they need dedicated vendor drivers (the way `USB_to_RC` handles XInput) |
+
+What a database *can* add is semantics, not decoding: the
+[SDL game controller DB](https://github.com/mdqinc/SDL_GameControllerDB) maps each known gamepad
+(keyed by vendor/product) to a standard layout (left stick, A/B/X/Y, triggers), which is what
+"universal" means for gamepads. Its text file is about 400 kB; it would fit the 8 MB flash but
+needs the GUID matching logic and brings nothing for joysticks like the SideWinder, which SDL
+does not cover. The planned, lighter alternative is a small built-in **profile table keyed on
+VID:PID** that preselects a sensible channel mapping and inversions per device (the current
+defaults are, in effect, the SideWinder profile), with the generic parser as the fallback for
+everything else.
+
 ## Architecture
 
 ```text
 lib/rc_core     pure C++17, no hardware:  SBUS encoder, CPPM waveform encoder, RMT symbol
                 packer, channel mapper, configuration model + key/value interface
-lib/hid_core    pure C++17, no hardware:  HID report descriptor parser, joystick decoder
+lib/hid_core    pure C++17, no hardware:  HID report descriptor parser (input/output/feature),
+                                          joystick decoder, bit-field codec, PID force-feedback
+                                          client (report builders + controller sequences)
+components/     usb_host_hid: vendored Espressif HID host driver + interrupt OUT endpoint API
 src/app         ESP-IDF layer:            UsbJoystick (usb host + hid driver), InputHub,
-                                          SbusOutput (UART), CppmOutput (RMT), ConfigStore (NVS),
-                                          console (esp_console), StatusLed
+                                          SbusOutput (UART), CppmOutput (RMT), FfbController
+                                          (PID over USB), ConfigStore (NVS), console, StatusLed
 src/main.cpp    wiring of the above
 test/           Unity tests for lib/ (run on the host, `pio test -e native`)
 ```
@@ -297,6 +372,7 @@ Tasks at run time:
 | `usb_lib` | 0 | USB host library daemon |
 | HID driver task | 0 | USB transfers, calls back with raw reports |
 | `hid_evt` | 0 | opens new devices, fetches/parses the report descriptor |
+| `ffb` | 0 | PID force feedback: spring upload on connect, config changes, vibration test |
 | `sbus` | 1 | one frame every `sbus.period` µs (esp_timer driven) |
 | `cppm` | 1 | keeps two frames queued in the RMT hardware |
 | console REPL | any | configuration commands |
@@ -316,9 +392,11 @@ The full evaluation of the existing projects is in [docs/research.md](docs/resea
   `pioarduino` platform fixes that but adds an unofficial dependency. Pure ESP-IDF 6.x gives the
   USB host library, the `usb_host_hid` class driver, the RMT TX driver, UART inversion,
   `esp_console` and NVS directly, with the official PlatformIO platform.
-- **Espressif's `usb_host_hid` driver, pulled from the component registry**, instead of copying
-  it into the tree (as `esp32beans/ESP32_USB_Host_HID` does) or using `EspUsbHost` (Arduino-only,
-  very large, unstable API).
+- **Espressif's `usb_host_hid` driver** instead of `EspUsbHost` (Arduino-only, very large,
+  unstable API). It started as a registry dependency; since force feedback needs the interrupt
+  OUT endpoint, which the upstream driver ignores, it is now a vendored copy with a small,
+  clearly marked addition (`components/usb_host_hid/NOTICE.md`). The `usb` host library itself
+  still comes from the registry.
 - **Own HID descriptor parser and joystick decoder** (about 500 lines, allocation-free, unit
   tested with the real SideWinder descriptor) instead of per-device hard-coded report layouts
   keyed on report length, which is what every ESP32 joystick example found does.
@@ -331,13 +409,13 @@ The full evaluation of the existing projects is in [docs/research.md](docs/resea
 
 ## Limitations and roadmap
 
-- No force feedback (PID output reports are not sent). The SideWinder's centring spring is
-  therefore inactive; the axes still report normally.
+- Force feedback is limited to the centring spring and a vibration test; no game-style effects.
+  It is implemented but not yet bench-tested on the SideWinder.
 - One joystick at a time (the first HID interface with joystick usages wins).
-- Only the SBUS-on-AUX path has been validated on a radio so far; the CPPM jack output and
-  the S.PORT path still need a bench test (see [Tested setups](#tested-setups)).
-- Possible extensions: per-device profiles keyed on VID/PID, a Web/USB configuration UI, CRSF
-  output, multiple joysticks merged into one frame.
+- Only the SBUS-on-AUX path has been validated on a radio so far (and flown); the CPPM jack
+  output and the S.PORT path still need a bench test (see [Tested setups](#tested-setups)).
+- Possible extensions: per-device profiles keyed on VID/PID, XInput (Xbox) controllers, a
+  Web/USB configuration UI, CRSF output, multiple joysticks merged into one frame.
 
 ## Acknowledgements
 

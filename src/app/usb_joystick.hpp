@@ -18,6 +18,7 @@
 namespace app {
 
 class InputHub;
+class FfbController;
 
 struct DeviceInfo {
     bool valid = false;
@@ -33,6 +34,9 @@ struct DeviceInfo {
 class UsbJoystick {
 public:
     explicit UsbJoystick(InputHub& hub);
+
+    /// Optional force-feedback controller notified about device lifecycle and PID reports.
+    void attachFfb(FfbController* ffb) { ffb_ = ffb; }
 
     /// Install the USB host stack and the HID class driver and start the worker tasks.
     void start();
@@ -62,6 +66,7 @@ private:
     bool adoptDevice(hid_host_device_handle_t handle);
 
     InputHub& hub_;
+    FfbController* ffb_ = nullptr;
     QueueHandle_t events_ = nullptr;
     TaskHandle_t lib_task_ = nullptr;
     TaskHandle_t hid_task_ = nullptr;

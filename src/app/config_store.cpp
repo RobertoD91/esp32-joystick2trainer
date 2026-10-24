@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "app/config_store.hpp"
 
+#include <cstddef>
 #include <cstring>
 
 #include "esp_log.h"
@@ -55,18 +56,38 @@ bool ConfigStore::readBlob(rc::Config& out) {
     if (nvs_open(kNamespace, NVS_READONLY, &handle) != ESP_OK) {
         return false;
     }
+    // Version 3 blobs are the current layout without the trailing FfbConfig: migrate by
+    // prefix copy so that user settings survive the firmware update. The legacy struct ended
+    // right before `ffb` and was padded to the struct alignment.
+    static_assert(offsetof(rc::Config, ffb) + sizeof(rc::FfbConfig) <= sizeof(rc::Config),
+                  "FfbConfig must stay the last member of rc::Config");
+    constexpr std::size_t kLegacyV3Prefix = offsetof(rc::Config, ffb);
+    constexpr std::size_t kLegacyV3Size =
+        (kLegacyV3Prefix + alignof(rc::Config) - 1) / alignof(rc::Config) * alignof(rc::Config);
+    constexpr uint32_t kLegacyV3Version = 3;
+
     size_t size = 0;
     esp_err_t err = nvs_get_blob(handle, kKey, nullptr, &size);
     bool ok = false;
-    if (err == ESP_OK && size == sizeof(rc::Config)) {
-        rc::Config tmp;
-        err = nvs_get_blob(handle, kKey, &tmp, &size);
-        if (err == ESP_OK && tmp.version == rc::kConfigVersion) {
-            out = tmp;
+    if (err == ESP_OK && (size == sizeof(rc::Config) || size == kLegacyV3Size)) {
+        alignas(rc::Config) uint8_t raw[sizeof(rc::Config)] = {0};
+        err = nvs_get_blob(handle, kKey, raw, &size);
+        uint32_t version = 0;
+        std::memcpy(&version, raw, sizeof(version));
+        if (err == ESP_OK && size == sizeof(rc::Config) && version == rc::kConfigVersion) {
+            std::memcpy(&out, raw, sizeof(out));
             ok = true;
+        } else if (err == ESP_OK && size == kLegacyV3Size && version == kLegacyV3Version) {
+            rc::Config migrated = rc::defaultConfig();
+            std::memcpy(&migrated, raw, kLegacyV3Prefix);
+            migrated.version = rc::kConfigVersion;
+            out = migrated;
+            ok = true;
+            ESP_LOGW(TAG, "stored configuration migrated from version %lu (force feedback defaults added)",
+                     static_cast<unsigned long>(kLegacyV3Version));
         } else {
             ESP_LOGW(TAG, "stored configuration ignored (version %lu, expected %lu)",
-                     static_cast<unsigned long>(tmp.version), static_cast<unsigned long>(rc::kConfigVersion));
+                     static_cast<unsigned long>(version), static_cast<unsigned long>(rc::kConfigVersion));
         }
     } else if (err == ESP_OK) {
         ESP_LOGW(TAG, "stored configuration has the wrong size (%u vs %u)", static_cast<unsigned>(size),

@@ -155,9 +155,10 @@ bool getChannel(const ChannelConfig& ch, const char* field, char* out, std::size
 }
 
 constexpr const char* kGlobalKeys[] = {
-    "sbus.enabled",  "sbus.gpio",     "sbus.period",   "sbus.inverted", "sbus.flags", "cppm.enabled", "cppm.gpio",
-    "cppm.channels", "cppm.frame",    "cppm.pulse",    "cppm.inverted", "cppm.min",   "cppm.max",     "cppm.sync_min",
-    "cppm.sync_max", "failsafe.mode", "input.timeout", "led.gpio",      "log.input",
+    "sbus.enabled", "sbus.gpio",     "sbus.period",   "sbus.inverted", "sbus.flags",    "cppm.enabled",
+    "cppm.gpio",    "cppm.channels", "cppm.frame",    "cppm.pulse",    "cppm.inverted", "cppm.min",
+    "cppm.max",     "cppm.sync_min", "cppm.sync_max", "failsafe.mode", "input.timeout", "led.gpio",
+    "log.input",    "ffb.enabled",   "ffb.spring",    "ffb.gain",      "ffb.deadband",
 };
 
 constexpr std::size_t kGlobalKeyCount = sizeof(kGlobalKeys) / sizeof(kGlobalKeys[0]);
@@ -311,6 +312,18 @@ Result set(Config& cfg, const char* key, const char* value, char* err, std::size
     if (std::strcmp(key, "log.input") == 0) {
         return ok(assignBool(value, cfg.log_input, err, err_len));
     }
+    if (std::strcmp(key, "ffb.enabled") == 0) {
+        return ok(assignBool(value, cfg.ffb.enabled, err, err_len));
+    }
+    if (std::strcmp(key, "ffb.spring") == 0) {
+        return ok(assignInt(value, 0, 100, cfg.ffb.spring_pct, err, err_len));
+    }
+    if (std::strcmp(key, "ffb.gain") == 0) {
+        return ok(assignInt(value, 0, 100, cfg.ffb.gain_pct, err, err_len));
+    }
+    if (std::strcmp(key, "ffb.deadband") == 0) {
+        return ok(assignInt(value, 0, 50, cfg.ffb.deadband_pct, err, err_len));
+    }
     setErr(err, err_len, "unknown key");
     return Result::UnknownKey;
 }
@@ -365,6 +378,14 @@ bool get(const Config& cfg, const char* key, char* out, std::size_t out_len) {
         v = cfg.led_gpio;
     } else if (std::strcmp(key, "log.input") == 0) {
         v = cfg.log_input;
+    } else if (std::strcmp(key, "ffb.enabled") == 0) {
+        v = cfg.ffb.enabled;
+    } else if (std::strcmp(key, "ffb.spring") == 0) {
+        v = cfg.ffb.spring_pct;
+    } else if (std::strcmp(key, "ffb.gain") == 0) {
+        v = cfg.ffb.gain_pct;
+    } else if (std::strcmp(key, "ffb.deadband") == 0) {
+        v = cfg.ffb.deadband_pct;
     } else {
         return false;
     }

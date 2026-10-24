@@ -4,6 +4,7 @@
 #include <cstring>
 #include <cwchar>
 
+#include "app/ffb.hpp"
 #include "app/input_hub.hpp"
 #include "esp_log.h"
 #include "usb/usb_host.h"
@@ -140,6 +141,9 @@ void UsbJoystick::onDeviceConnected(hid_host_device_handle_t handle) {
     }
     active_ = handle;
     hub_.onConnected();
+    if (ffb_ != nullptr) {
+        ffb_->onDeviceReady(handle, descriptor_);
+    }
 }
 
 bool UsbJoystick::adoptDevice(hid_host_device_handle_t handle) {
@@ -223,6 +227,9 @@ void UsbJoystick::onInputReport(hid_host_device_handle_t handle) {
         hub_.onInput(state_);
     } else {
         ++rejected_reports_;
+        if (ffb_ != nullptr) {
+            ffb_->onInputReport(report_buf_, len);  // e.g. the PID state report
+        }
     }
 }
 
@@ -232,6 +239,9 @@ void UsbJoystick::onDisconnected(hid_host_device_handle_t handle) {
         active_ = nullptr;
         info_.valid = false;
         hub_.onDisconnected();
+        if (ffb_ != nullptr) {
+            ffb_->onDeviceGone(handle);
+        }
     }
     ESP_LOGI(TAG, "HID interface disconnected%s", was_active ? " (active joystick)" : "");
     const esp_err_t err = hid_host_device_close(handle);

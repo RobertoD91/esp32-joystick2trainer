@@ -31,8 +31,9 @@
 
 namespace rc {
 
-/// Bump whenever the layout of Config changes; stored blobs with another version are discarded.
-constexpr uint32_t kConfigVersion = 3;
+/// Bump whenever the layout of Config changes; stored blobs with another version are discarded
+/// (except for the one-step migrations handled by the config store).
+constexpr uint32_t kConfigVersion = 4;
 
 /// What the outputs do while no valid joystick input is available.
 enum class FailsafeMode : uint8_t {
@@ -61,6 +62,18 @@ struct CppmConfig {
     cppm::Config wave{};
 };
 
+/// Force feedback (USB HID PID devices only). The joystick's own centring spring is a
+/// software effect that the host must create; without it the stick is loose.
+struct FfbConfig {
+    bool enabled = true;
+    /// Strength of the centring spring, 0 (off) .. 100 %.
+    uint8_t spring_pct = 60;
+    /// Overall device gain, 0 .. 100 %.
+    uint8_t gain_pct = 100;
+    /// Dead band of the spring around the centre, 0 .. 50 % of travel.
+    uint8_t deadband_pct = 0;
+};
+
 struct Config {
     uint32_t version = kConfigVersion;
     SbusConfig sbus{};
@@ -75,6 +88,8 @@ struct Config {
     int8_t led_gpio = J2T_LED_GPIO;
     /// Print decoded joystick input on the console (debug aid).
     bool log_input = false;
+    /// Force feedback. Appended last so that version-3 blobs can be migrated by prefix copy.
+    FfbConfig ffb{};
 };
 
 /// Factory defaults, including a mapping suited to a 4-axis/8-button stick such as the

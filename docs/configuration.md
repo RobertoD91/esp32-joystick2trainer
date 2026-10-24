@@ -22,6 +22,9 @@ start-up; everything else takes effect immediately.
 | `save` | write the configuration to NVS |
 | `load` | discard unsaved changes and reload from NVS |
 | `defaults` | factory defaults in RAM and erase the stored configuration |
+| `ffb` | force feedback status (PID device, transport, actuator power, spring, last error) |
+| `ffb test [ms]` | play a sine vibration for `ms` milliseconds (default 600) |
+| `ffb apply` | re-send the spring/gain settings to the device |
 | `reboot` | restart |
 
 Booleans accept `1/0`, `on/off`, `true/false`, `yes/no`.
@@ -59,6 +62,21 @@ frame up to `cppm.frame`. With 8 channels at 1500 µs the sync gap is 10.5 ms.
 | `log.input` | bool | 0 | log every decoded report (debug only, floods the console) |
 
 USB disconnection is always detected by the host stack independently of `input.timeout`.
+
+## Force feedback keys
+
+Only for joysticks that implement USB HID PID (Physical Interface Device) force feedback, such
+as the SideWinder Force Feedback 2. Changes apply immediately; `save` persists them.
+
+| Key | Range | Default | Description |
+|-----|-------|---------|-------------|
+| `ffb.enabled` | bool | 1 | master switch. 0 stops the centring spring and sets the device gain to 0 |
+| `ffb.spring` | 0..100 % | 60 | strength of the centring spring (condition effect coefficients). 0 leaves the stick loose |
+| `ffb.gain` | 0..100 % | 100 | PID device gain applied to every effect |
+| `ffb.deadband` | 0..50 % | 0 | zone around the centre without spring force |
+
+The spring is re-created on every connection; `ffb` on the console shows whether the device
+accepted it and what the PID state report says (actuator power, safety switch, effect playing).
 
 ## Channel keys (`ch1` … `ch16`)
 

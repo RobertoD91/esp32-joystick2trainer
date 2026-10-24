@@ -28,7 +28,7 @@ static std::vector<std::pair<std::string, std::string>> dump(const Config& cfg, 
 static void test_dump_roundtrip_reproduces_defaults() {
     const Config original = defaultConfig();
     const auto entries = dump(original);
-    TEST_ASSERT_EQUAL_UINT32(19 + 16 * 9, entries.size());
+    TEST_ASSERT_EQUAL_UINT32(23 + 16 * 9, entries.size());
 
     Config rebuilt;  // all zero except version -> everything differs from the defaults
     rebuilt.mapping = MappingConfig{};
@@ -71,6 +71,13 @@ static void test_global_keys() {
     TEST_ASSERT_EQUAL_UINT32(500, cfg.input_timeout_ms);
     TEST_ASSERT_EQUAL(kv::Result::Ok, kv::set(cfg, "led.gpio", "-1", err, sizeof(err)));
     TEST_ASSERT_EQUAL_INT8(-1, cfg.led_gpio);
+    TEST_ASSERT_EQUAL(kv::Result::Ok, kv::set(cfg, "ffb.spring", "35", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_UINT8(35, cfg.ffb.spring_pct);
+    TEST_ASSERT_EQUAL(kv::Result::Ok, kv::set(cfg, "ffb.enabled", "0", err, sizeof(err)));
+    TEST_ASSERT_FALSE(cfg.ffb.enabled);
+    TEST_ASSERT_EQUAL(kv::Result::BadValue, kv::set(cfg, "ffb.gain", "101", err, sizeof(err)));
+    TEST_ASSERT_TRUE(kv::get(cfg, "ffb.deadband", out, sizeof(out)));
+    TEST_ASSERT_EQUAL_STRING("0", out);
 }
 
 static void test_channel_keys() {

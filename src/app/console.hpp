@@ -9,6 +9,7 @@ class InputHub;
 class UsbJoystick;
 class SbusOutput;
 class CppmOutput;
+class FfbController;
 
 struct ConsoleContext {
     ConfigStore* config;
@@ -16,6 +17,7 @@ struct ConsoleContext {
     UsbJoystick* usb;
     SbusOutput* sbus;
     CppmOutput* cppm;
+    FfbController* ffb;
 };
 
 /// Register the commands and start the REPL task. `ctx` must outlive the program.

@@ -1,6 +1,6 @@
 # ESP-IDF Component Manager manifest (https://components.espressif.com).
 # PlatformIO downloads these into managed_components/ on the first (clean) build.
+# The HID class driver is vendored in components/usb_host_hid (see its NOTICE.md); only the
+# USB host library itself comes from the registry (it left the IDF tree in ESP-IDF 6.0).
 dependencies:
-  # USB host HID class driver (Apache-2.0). On ESP-IDF >= 6.0 it pulls in the
-  # espressif/usb host library as well, which is no longer part of the IDF tree.
-  espressif/usb_host_hid: "^1.2.1"
+  espressif/usb: "^1.0.0"

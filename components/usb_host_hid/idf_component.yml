@@ -1,0 +1,10 @@
+## Vendored espressif/usb_host_hid with local modifications (see NOTICE.md).
+version: "1.2.1-j2t.1"
+description: USB Host HID driver (vendored, with interrupt OUT endpoint support)
+dependencies:
+  idf: ">=5.0"
+  espressif/usb:
+    version: "^1.0.0"
+    public: true
+    rules:
+      - if: "idf_version >=6.0"

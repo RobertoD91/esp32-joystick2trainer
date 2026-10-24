@@ -3,6 +3,25 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow semantic versioning.
 
+## [Unreleased]
+
+### Added
+
+- Force feedback for USB HID PID joysticks: the firmware creates and runs the centring
+  spring (configurable strength, gain and dead band through `ffb.*`), decodes the PID state
+  report and offers a vibration test (`ffb test`). Generic, descriptor driven; verified
+  against the SideWinder Force Feedback 2 descriptor in the unit tests, bench test pending.
+- HID report descriptor parser now extracts OUTPUT and FEATURE fields, array usage lists,
+  enclosing collections and HID units; new bit-field writer.
+- Vendored copy of Espressif's `usb_host_hid` driver (`components/usb_host_hid`) with an
+  interrupt OUT endpoint API for output reports (see its `NOTICE.md`).
+- README: first-flight record, force feedback documentation, device support assessment.
+
+### Changed
+
+- Configuration blob version 4 (adds `FfbConfig`). Version-3 blobs saved by 0.9.0 are
+  migrated automatically; user settings are preserved.
+
 ## [0.9.0] - 2026-09-20
 
 First hardware-validated release.
@@ -34,4 +53,5 @@ First hardware-validated release.
 
 - CPPM on the trainer jack (`Master/Jack`) and SBUS on the module bay S.PORT pin.
 
+[Unreleased]: https://github.com/RobertoD91/esp32-joystick2trainer/compare/v0.9.0...HEAD
 [0.9.0]: https://github.com/RobertoD91/esp32-joystick2trainer/releases/tag/v0.9.0

@@ -158,7 +158,7 @@ constexpr const char* kGlobalKeys[] = {
     "sbus.enabled", "sbus.gpio",     "sbus.period",   "sbus.inverted", "sbus.flags",    "cppm.enabled",
     "cppm.gpio",    "cppm.channels", "cppm.frame",    "cppm.pulse",    "cppm.inverted", "cppm.min",
     "cppm.max",     "cppm.sync_min", "cppm.sync_max", "failsafe.mode", "input.timeout", "led.gpio",
-    "log.input",    "ffb.enabled",   "ffb.spring",    "ffb.gain",      "ffb.deadband",
+    "log.input",    "ffb.enabled",   "ffb.spring",    "ffb.gain",      "ffb.deadband",  "ffb.direction",
 };
 
 constexpr std::size_t kGlobalKeyCount = sizeof(kGlobalKeys) / sizeof(kGlobalKeys[0]);
@@ -324,6 +324,9 @@ Result set(Config& cfg, const char* key, const char* value, char* err, std::size
     if (std::strcmp(key, "ffb.deadband") == 0) {
         return ok(assignInt(value, 0, 50, cfg.ffb.deadband_pct, err, err_len));
     }
+    if (std::strcmp(key, "ffb.direction") == 0) {
+        return ok(assignBool(value, cfg.ffb.direction_form, err, err_len));
+    }
     setErr(err, err_len, "unknown key");
     return Result::UnknownKey;
 }
@@ -386,6 +389,8 @@ bool get(const Config& cfg, const char* key, char* out, std::size_t out_len) {
         v = cfg.ffb.gain_pct;
     } else if (std::strcmp(key, "ffb.deadband") == 0) {
         v = cfg.ffb.deadband_pct;
+    } else if (std::strcmp(key, "ffb.direction") == 0) {
+        v = cfg.ffb.direction_form;
     } else {
         return false;
     }

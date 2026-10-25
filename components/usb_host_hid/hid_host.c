@@ -74,6 +74,7 @@ static const char *TAG = "hid-host";
 
 #define DEFAULT_TIMEOUT_MS  (5000)
 #define HID_OUT_XFER_MIN_SIZE (64)   /**< Minimum OUT transfer buffer [esp32-joystick2trainer] */
+#define HID_OUT_RECOVER_TIMEOUT_MS (500) /**< Budget for OUT endpoint recovery steps [esp32-joystick2trainer] */
 
 /**
  * @brief HID Device structure.
@@ -867,6 +868,39 @@ static void hid_host_free_out_transfer(hid_iface_t *iface)
 }
 
 /**
+ * @brief Halt, flush and clear the optional OUT endpoint [esp32-joystick2trainer]
+ *
+ * Retires an output report that may still be queued so that the interface can be released.
+ * The flush makes the host library run the transfer's completion callback (status CANCELED or
+ * NO_DEVICE) on the driver task, which wakes up a caller blocked in
+ * hid_host_device_output_report(). Best effort: on the disconnect path the host library has
+ * already halted and flushed every pipe and these calls fail with ESP_ERR_INVALID_STATE.
+ *
+ * @param[in] iface   Pointer to Interface structure (must have a parent)
+ * @param[in] strict  Log failures as warnings (graceful path) instead of debug (disconnect)
+ */
+static void hid_host_quiesce_out_endpoint(hid_iface_t *iface, bool strict)
+{
+    if (!iface->ep_out || !iface->out_xfer) {
+        return;
+    }
+    const usb_device_handle_t dev_hdl = iface->parent->dev_hdl;
+    esp_err_t err = usb_host_endpoint_halt(dev_hdl, iface->ep_out);
+    if (err == ESP_OK) {
+        err = usb_host_endpoint_flush(dev_hdl, iface->ep_out);
+    }
+    if (err != ESP_OK) {
+        if (strict) {
+            ESP_LOGW(TAG, "Unable to halt/flush EP OUT: %s", esp_err_to_name(err));
+        } else {
+            ESP_LOGD(TAG, "EP OUT halt/flush failed on disconnect (device likely gone): %s",
+                     esp_err_to_name(err));
+        }
+    }
+    usb_host_endpoint_clear(dev_hdl, iface->ep_out);
+}
+
+/**
  * @brief HID Host release Interface and free transfer, change state to IDLE
  *
  * @param[in] iface       Pointer to Interface structure,
@@ -928,6 +962,9 @@ static esp_err_t hid_host_disable_interface(hid_iface_t *iface)
                              "Unable to HALT EP");
         HID_RETURN_ON_ERROR( usb_host_endpoint_flush(iface->parent->dev_hdl, iface->ep_in),
                              "Unable to FLUSH EP");
+        // Retire a queued output report as well, otherwise usb_host_interface_release()
+        // fails on the in-flight OUT URB [esp32-joystick2trainer]
+        hid_host_quiesce_out_endpoint(iface, true);
     }
     // If interface state is suspended, the EP is already flushed and halted, only clear the EP
     // If suspended, may return ESP_ERR_INVALID_STATE
@@ -977,6 +1014,7 @@ static esp_err_t hid_host_disable_interface_disconnect(hid_iface_t *iface)
             ESP_LOGD(TAG, "EP flush failed on disconnect (device likely gone): %s",
                      esp_err_to_name(ep_err));
         }
+        hid_host_quiesce_out_endpoint(iface, false);   // [esp32-joystick2trainer]
     }
     usb_host_endpoint_clear(iface->parent->dev_hdl, iface->ep_in);
 
@@ -1443,7 +1481,7 @@ esp_err_t hid_host_install(const hid_host_driver_config_t *config)
     driver->all_events_handled = xSemaphoreCreateBinary();
     driver->out_xfer_done = xSemaphoreCreateBinary();   // [esp32-joystick2trainer]
     driver->out_xfer_mutex = xSemaphoreCreateMutex();   // [esp32-joystick2trainer]
-    HID_GOTO_ON_FALSE(driver->all_events_handled,
+    HID_GOTO_ON_FALSE(driver->all_events_handled && driver->out_xfer_done && driver->out_xfer_mutex,
                       ESP_ERR_NO_MEM,
                       "Unable to create semaphore");
 
@@ -1483,6 +1521,12 @@ fail:
     }
     if (driver->all_events_handled) {
         vSemaphoreDelete(driver->all_events_handled);
+    }
+    if (driver->out_xfer_done) {      // [esp32-joystick2trainer]
+        vSemaphoreDelete(driver->out_xfer_done);
+    }
+    if (driver->out_xfer_mutex) {
+        vSemaphoreDelete(driver->out_xfer_mutex);
     }
     free(driver);
     return ret;
@@ -1956,53 +2000,200 @@ bool hid_host_device_has_output_endpoint(hid_host_device_handle_t hid_dev_handle
     return iface && iface->ep_out && iface->out_xfer && s_hid_driver && s_hid_driver->out_xfer_done;
 }
 
+/**
+ * @brief Whether the interface can still be used for output reports [esp32-joystick2trainer]
+ *
+ * Must be called with open_close_mutex held: the close path (graceful or disconnect) takes
+ * the same mutex before freeing the OUT transfer, the parent device and the interface itself.
+ */
+static inline bool hid_host_out_iface_usable(hid_iface_t *iface)
+{
+    return is_interface_in_list(iface) &&
+           iface->parent &&
+           iface->ep_out &&
+           iface->out_xfer &&
+           (HID_INTERFACE_STATE_READY == iface->state || HID_INTERFACE_STATE_ACTIVE == iface->state);
+}
+
+/**
+ * @brief Standard request CLEAR_FEATURE(ENDPOINT_HALT) [esp32-joystick2trainer]
+ *
+ * Un-stalls an endpoint on the device side (and resets its data toggle).
+ */
+static esp_err_t hid_host_clear_endpoint_halt(hid_device_t *hid_device, uint8_t ep_addr)
+{
+    HID_RETURN_ON_INVALID_ARG(hid_device);
+    HID_RETURN_ON_INVALID_ARG(hid_device->ctrl_xfer);
+    HID_RETURN_ON_ERROR( hid_device_try_lock(hid_device, HID_OUT_RECOVER_TIMEOUT_MS),
+                         "HID Device is busy by other task");
+
+    usb_setup_packet_t *setup = (usb_setup_packet_t *)hid_device->ctrl_xfer->data_buffer;
+    setup->bmRequestType = USB_BM_REQUEST_TYPE_DIR_OUT |
+                           USB_BM_REQUEST_TYPE_TYPE_STANDARD |
+                           USB_BM_REQUEST_TYPE_RECIP_ENDPOINT;
+    setup->bRequest = USB_B_REQUEST_CLEAR_FEATURE;
+    setup->wValue = ENDPOINT_HALT;
+    setup->wIndex = ep_addr;
+    setup->wLength = 0;
+
+    esp_err_t ret = hid_control_transfer(hid_device, USB_SETUP_PACKET_SIZE, HID_OUT_RECOVER_TIMEOUT_MS);
+    hid_device_unlock(hid_device);
+    return ret;
+}
+
+/**
+ * @brief Bring the OUT endpoint back to a usable state after a failed transfer [esp32-joystick2trainer]
+ *
+ * Without this a single failure is permanent until re-plug: after a transfer error the host
+ * library leaves the pipe halted (every later submit fails with ESP_ERR_INVALID_STATE), and
+ * after a timeout the URB stays queued (every later submit fails with ESP_ERR_NOT_FINISHED,
+ * and the interface cannot be released). Called with out_xfer_mutex held.
+ *
+ * @param[in] hid_dev_handle  HID device handle
+ * @param[in] in_flight       The transfer never completed: cancel it first
+ * @param[in] status          Completion status of the failed transfer (ignored when in_flight)
+ */
+static void hid_host_recover_out_endpoint(hid_host_device_handle_t hid_dev_handle,
+                                          bool in_flight,
+                                          usb_transfer_status_t status)
+{
+    hid_iface_t *iface = (hid_iface_t *) hid_dev_handle;
+    SemaphoreHandle_t open_close_mutex = s_hid_driver->open_close_mutex;
+    SemaphoreHandle_t done = s_hid_driver->out_xfer_done;
+
+    if (!in_flight &&
+            (USB_TRANSFER_STATUS_CANCELED == status || USB_TRANSFER_STATUS_NO_DEVICE == status)) {
+        // Cancelled by hid_host_device_stop()/close() or by a disconnect: those paths own the pipe.
+        return;
+    }
+
+    if (xSemaphoreTake(open_close_mutex, pdMS_TO_TICKS(HID_OUT_RECOVER_TIMEOUT_MS)) != pdTRUE) {
+        ESP_LOGW(TAG, "EP OUT recovery skipped (driver busy)");
+        return;
+    }
+    if (!hid_host_out_iface_usable(iface)) {
+        xSemaphoreGive(open_close_mutex);
+        ESP_LOGD(TAG, "EP OUT recovery skipped (interface closed)");
+        return;
+    }
+    hid_device_t *hid_device = iface->parent;
+    const usb_device_handle_t dev_hdl = hid_device->dev_hdl;
+    const uint8_t ep_out = iface->ep_out;
+
+    if (in_flight) {
+        // Halting and flushing the pipe retires the URB (status CANCELED); its completion
+        // callback is dispatched by the driver task, so wait for it without holding the mutex
+        // (the driver task may itself be waiting for open_close_mutex to process a disconnect).
+        usb_host_endpoint_halt(dev_hdl, ep_out);
+        usb_host_endpoint_flush(dev_hdl, ep_out);
+        xSemaphoreGive(open_close_mutex);
+        if (xSemaphoreTake(done, pdMS_TO_TICKS(HID_OUT_RECOVER_TIMEOUT_MS)) != pdTRUE) {
+            ESP_LOGW(TAG, "EP OUT transfer could not be cancelled");
+            return;
+        }
+        if (xSemaphoreTake(open_close_mutex, pdMS_TO_TICKS(HID_OUT_RECOVER_TIMEOUT_MS)) != pdTRUE) {
+            return;
+        }
+        if (!hid_host_out_iface_usable(iface) || iface->parent != hid_device) {
+            xSemaphoreGive(open_close_mutex);
+            return;
+        }
+    } else if (USB_TRANSFER_STATUS_STALL == status) {
+        // The device halted the endpoint: it only resumes after CLEAR_FEATURE(ENDPOINT_HALT).
+        esp_err_t err = hid_host_clear_endpoint_halt(hid_device, ep_out);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "CLEAR_FEATURE(ENDPOINT_HALT) on EP OUT failed: %s", esp_err_to_name(err));
+        }
+    }
+    // Host side: the pipe stays halted after an error (or after our halt) until it is cleared.
+    esp_err_t err = usb_host_endpoint_clear(dev_hdl, ep_out);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "EP OUT clear failed: %s", esp_err_to_name(err));
+    } else {
+        ESP_LOGI(TAG, "EP OUT recovered after %s", in_flight ? "timeout" : "transfer error");
+    }
+    xSemaphoreGive(open_close_mutex);
+}
+
 esp_err_t hid_host_device_output_report(hid_host_device_handle_t hid_dev_handle,
                                         const uint8_t *data,
                                         size_t length,
                                         uint32_t timeout_ms)
 {
-    hid_iface_t *iface = get_iface_by_handle(hid_dev_handle);
+    hid_iface_t *iface = (hid_iface_t *) hid_dev_handle;
 
     HID_RETURN_ON_INVALID_ARG(iface);
     HID_RETURN_ON_INVALID_ARG(data);
-    HID_RETURN_ON_FALSE(iface->ep_out && iface->out_xfer, ESP_ERR_NOT_SUPPORTED, "Interface has no OUT endpoint");
-    HID_RETURN_ON_FALSE(length > 0 && length <= iface->out_xfer->data_buffer_size, ESP_ERR_INVALID_SIZE,
-                        "Report too large for the OUT transfer buffer");
-    HID_RETURN_ON_FALSE((HID_INTERFACE_STATE_READY == iface->state || HID_INTERFACE_STATE_ACTIVE == iface->state),
-                        ESP_ERR_INVALID_STATE, "Interface wrong state");
-
+    HID_RETURN_ON_FALSE(length > 0, ESP_ERR_INVALID_SIZE, "Empty report");
     HID_RETURN_ON_FALSE(s_hid_driver && s_hid_driver->out_xfer_done && s_hid_driver->out_xfer_mutex,
                         ESP_ERR_INVALID_STATE, "HID Driver is not installed");
 
     SemaphoreHandle_t done = s_hid_driver->out_xfer_done;
     SemaphoreHandle_t mutex = s_hid_driver->out_xfer_mutex;
+    SemaphoreHandle_t open_close_mutex = s_hid_driver->open_close_mutex;
     if (xSemaphoreTake(mutex, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
         return ESP_ERR_TIMEOUT;
     }
 
+    // Validate the handle and submit while holding open_close_mutex: a concurrent close or
+    // disconnect (which frees the transfer, the device and the interface) waits for it.
     esp_err_t ret = ESP_OK;
-    memcpy(iface->out_xfer->data_buffer, data, length);
-    iface->out_xfer->device_handle = iface->parent->dev_hdl;
-    iface->out_xfer->bEndpointAddress = iface->ep_out;
-    iface->out_xfer->num_bytes = length;
-    iface->out_xfer->callback = out_xfer_done;
-    iface->out_xfer->context = NULL;
-    iface->out_xfer->timeout_ms = timeout_ms;
-    xSemaphoreTake(done, 0);  // clear a stale completion
-    s_hid_driver->out_xfer_status = USB_TRANSFER_STATUS_ERROR;
-
-    ret = usb_host_transfer_submit(iface->out_xfer);
+    bool submitted = false;
+    if (xSemaphoreTake(open_close_mutex, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
+        ret = ESP_ERR_TIMEOUT;
+        goto unlock;
+    }
+    if (!is_interface_in_list(iface)) {
+        ESP_LOGE(TAG, "HID interface handle not found");
+        ret = ESP_ERR_INVALID_ARG;
+    } else if (!iface->ep_out || !iface->out_xfer) {
+        ESP_LOGE(TAG, "Interface has no OUT endpoint");
+        ret = ESP_ERR_NOT_SUPPORTED;
+    } else if (length > iface->out_xfer->data_buffer_size) {
+        ESP_LOGE(TAG, "Report too large for the OUT transfer buffer");
+        ret = ESP_ERR_INVALID_SIZE;
+    } else if (HID_INTERFACE_STATE_READY != iface->state && HID_INTERFACE_STATE_ACTIVE != iface->state) {
+        ESP_LOGE(TAG, "Interface wrong state");
+        ret = ESP_ERR_INVALID_STATE;
+    } else {
+        memcpy(iface->out_xfer->data_buffer, data, length);
+        iface->out_xfer->device_handle = iface->parent->dev_hdl;
+        iface->out_xfer->bEndpointAddress = iface->ep_out;
+        iface->out_xfer->num_bytes = length;
+        iface->out_xfer->callback = out_xfer_done;
+        iface->out_xfer->context = NULL;
+        iface->out_xfer->timeout_ms = timeout_ms;   // informational only: not implemented by the host library
+        xSemaphoreTake(done, 0);  // clear a stale completion
+        s_hid_driver->out_xfer_status = USB_TRANSFER_STATUS_ERROR;
+        ret = usb_host_transfer_submit(iface->out_xfer);
+        submitted = true;
+    }
+    xSemaphoreGive(open_close_mutex);
     // From here on neither `iface` nor its transfer are touched: a disconnect may free them
     // (the completion callback runs first and reports the status driver-wide).
-    if (ret == ESP_OK) {
+
+    if (submitted && ret != ESP_OK) {
+        ESP_LOGW(TAG, "OUT transfer submit failed: %s", esp_err_to_name(ret));
+        if (ESP_ERR_INVALID_STATE == ret) {
+            // Pipe left halted by an earlier error: clear it so that the next report goes through.
+            hid_host_recover_out_endpoint(hid_dev_handle, false, USB_TRANSFER_STATUS_ERROR);
+        }
+    } else if (submitted) {
         if (xSemaphoreTake(done, pdMS_TO_TICKS(timeout_ms + 100)) != pdTRUE) {
+            ESP_LOGW(TAG, "OUT transfer timed out");
             ret = ESP_ERR_TIMEOUT;
-        } else if (s_hid_driver->out_xfer_status != USB_TRANSFER_STATUS_COMPLETED) {
-            ESP_LOGW(TAG, "OUT transfer failed, status %d", s_hid_driver->out_xfer_status);
-            ret = ESP_FAIL;
+            hid_host_recover_out_endpoint(hid_dev_handle, true, USB_TRANSFER_STATUS_TIMED_OUT);
+        } else {
+            const usb_transfer_status_t status = s_hid_driver->out_xfer_status;
+            if (status != USB_TRANSFER_STATUS_COMPLETED) {
+                ESP_LOGW(TAG, "OUT transfer failed, status %d", status);
+                ret = ESP_FAIL;
+                hid_host_recover_out_endpoint(hid_dev_handle, false, status);
+            }
         }
     }
 
+unlock:
     xSemaphoreGive(mutex);
     return ret;
 }

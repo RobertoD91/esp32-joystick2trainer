@@ -30,12 +30,6 @@ const ReportField* findArrayInCollection(const ParsedDescriptor& d, ReportType t
     return nullptr;
 }
 
-/// Report ID of the report of `type` that contains a PID field with `usage` (first match).
-int reportWith(const ParsedDescriptor& d, ReportType type, uint16_t usage) {
-    const ReportField* f = d.find(type, kPagePid, usage);
-    return f ? f->report_id : -1;
-}
-
 int reportWithCollection(const ParsedDescriptor& d, ReportType type, uint16_t collection_usage) {
     const ReportField* list = d.fieldsOf(type);
     const std::size_t n = d.fieldCountOf(type);
@@ -160,6 +154,7 @@ bool Device::configure(const ParsedDescriptor& desc, char* reason, std::size_t r
     create_new_effect_id_ = reportWithCollection(desc, ReportType::Feature, kUsageCreateNewEffectReport);
     block_load_id_ = reportWithCollection(desc, ReportType::Feature, kUsageBlockLoadReport);
     state_report_id_ = reportWithCollection(desc, ReportType::Input, kUsagePidStateReport);
+    pool_id_ = reportWithCollection(desc, ReportType::Feature, kUsagePidPoolReport);
 
     int id = -1;
     device_control_ = findArrayInCollection(desc, ReportType::Output, kUsageDeviceControl, id);
@@ -233,6 +228,46 @@ std::size_t Device::blockLoadReportLen() const {
     }
     return desc_->reportBytes(ReportType::Feature, static_cast<uint8_t>(block_load_id_)) +
            (desc_->uses_report_ids ? 1 : 0);
+}
+
+std::size_t Device::poolReportLen() const {
+    if (!configured_ || pool_id_ < 0) {
+        return 0;
+    }
+    return desc_->reportBytes(ReportType::Feature, static_cast<uint8_t>(pool_id_)) + (desc_->uses_report_ids ? 1 : 0);
+}
+
+bool Device::parsePool(const Report& in, PoolInfo& p) const {
+    p = PoolInfo{};
+    if (!configured_ || pool_id_ < 0) {
+        return false;
+    }
+    const std::size_t head = desc_->uses_report_ids ? 1 : 0;
+    if (in.len <= head || (head == 1 && in.data[0] != static_cast<uint8_t>(pool_id_))) {
+        return false;
+    }
+    const uint8_t* payload = in.data + head;
+    const std::size_t plen = in.len - head;
+    const ReportField* f;
+    bool ok = false;
+    if ((f = feature(kUsageRamPoolSize, pool_id_)) != nullptr) {
+        const int32_t v = bits::read(payload, plen, *f, 0, ok);
+        p.ram_pool_size = (ok && v > 0) ? static_cast<uint32_t>(v) : 0;
+    }
+    if ((f = feature(kUsageSimultaneousEffectsMax, pool_id_)) != nullptr) {
+        const int32_t v = bits::read(payload, plen, *f, 0, ok);
+        p.simultaneous_max = (ok && v > 0) ? static_cast<uint32_t>(v) : 0;
+    }
+    if ((f = feature(kUsageDeviceManagedPool, pool_id_)) != nullptr) {
+        const int32_t v = bits::read(payload, plen, *f, 0, ok);
+        p.has_device_managed_flag = ok;
+        p.device_managed = ok && v != 0;
+    }
+    if ((f = feature(kUsageSharedParameterBlocks, pool_id_)) != nullptr) {
+        const int32_t v = bits::read(payload, plen, *f, 0, ok);
+        p.shared_parameter_blocks = ok && v != 0;
+    }
+    return true;
 }
 
 bool Device::begin(ReportType type, int report_id, Report& out) const {
@@ -530,6 +565,16 @@ bool Controller::initialise() {
     ok = deviceControl(kUsageDcEnableActuators) && ok;
     ok = setDeviceGain(1.0f) && ok;
     return ok;
+}
+
+bool Controller::readPool(PoolInfo& out) {
+    out = PoolInfo{};
+    const std::size_t len = device_.poolReportLen();
+    if (len == 0) {
+        return false;
+    }
+    Report in;
+    return transport_.getFeature(device_.poolReportId(), len, in) && device_.parsePool(in, out);
 }
 
 int Controller::createEffect(uint16_t effect_type_usage, uint16_t* status_out) {

@@ -73,6 +73,8 @@ constexpr uint16_t kUsageDeviceGain = 0x7E;
 constexpr uint16_t kUsagePidPoolReport = 0x7F;
 constexpr uint16_t kUsageRamPoolSize = 0x80;
 constexpr uint16_t kUsageSimultaneousEffectsMax = 0x83;
+constexpr uint16_t kUsageDeviceManagedPool = 0xA9;
+constexpr uint16_t kUsageSharedParameterBlocks = 0xAA;
 constexpr uint16_t kUsageBlockLoadReport = 0x89;
 constexpr uint16_t kUsageBlockLoadStatus = 0x8B;
 constexpr uint16_t kUsageBlockLoadSuccess = 0x8C;
@@ -130,15 +132,37 @@ struct State {
     int effect_block_index = 0;
 };
 
+/// Set Effect parameters. The defaults encode the per-axis form of the PID specification
+/// (Axes Enable X and Y set, Direction Enable clear): the right one for a condition effect
+/// with one parameter block per axis. The Linux driver instead sends every effect with
+/// Direction Enable set and the Axes Enable bits clear (`linuxDirectionForm()`).
 struct EffectParams {
     uint16_t type = kUsageEtSpring;
     uint32_t duration_ms = 0;  ///< 0 = infinite
     float gain = 1.0f;         ///< 0..1
-    bool direction_enable = true;
-    float direction = 0.0f;  ///< 0..1 = 0..360 degrees (PID polar direction)
+    bool direction_enable = false;
+    float direction = 0.0f;  ///< 0..1 = 0..360 degrees (PID polar direction, 0 = north)
     bool axis_x = true;
     bool axis_y = true;
     uint32_t start_delay_ms = 0;
+
+    /// Switch to the form the Linux hid-pidff driver sends (Direction Enable, no axes).
+    EffectParams& linuxDirectionForm(float dir = 0.0f) {
+        direction_enable = true;
+        direction = dir;
+        axis_x = false;
+        axis_y = false;
+        return *this;
+    }
+};
+
+/// Contents of the PID Pool feature report (device memory for effects).
+struct PoolInfo {
+    uint32_t ram_pool_size = 0;     ///< bytes, 0 when not reported
+    uint32_t simultaneous_max = 0;  ///< effects playing at once, 0 when not reported
+    bool has_device_managed_flag = false;
+    bool device_managed = false;  ///< the device allocates parameter blocks itself
+    bool shared_parameter_blocks = false;
 };
 
 struct Condition {
@@ -171,9 +195,15 @@ public:
     bool hasPeriodicReport() const { return set_periodic_id_ >= 0; }
     bool hasDeviceGain() const { return device_gain_ != nullptr; }
     bool hasStateReport() const { return state_report_id_ >= 0; }
+    bool hasPoolReport() const { return pool_id_ >= 0; }
     int blockIndexMin() const { return block_index_min_; }
     int blockIndexMax() const { return block_index_max_; }
     uint8_t stateReportId() const { return static_cast<uint8_t>(state_report_id_); }
+    uint8_t poolReportId() const { return static_cast<uint8_t>(pool_id_); }
+    /// Length of the PID Pool feature report including the ID byte (0 when absent).
+    std::size_t poolReportLen() const;
+    /// Decode a PID Pool feature report (report bytes including the ID byte).
+    bool parsePool(const Report& in, PoolInfo& out) const;
 
     // Report builders (return false when the report/field is missing).
     bool buildDeviceControl(uint16_t dc_usage, Report& out) const;
@@ -216,6 +246,7 @@ private:
     int create_new_effect_id_ = -1;
     int block_load_id_ = -1;
     int state_report_id_ = -1;
+    int pool_id_ = -1;
     const ReportField* device_gain_ = nullptr;
     const ReportField* device_control_ = nullptr;
     const ReportField* create_effect_type_ = nullptr;
@@ -236,6 +267,8 @@ public:
     bool initialise();
     bool deviceControl(uint16_t dc_usage);
     bool setDeviceGain(float gain);
+    /// Read the PID Pool feature report (diagnostics; false when absent or unanswered).
+    bool readPool(PoolInfo& out);
     /// Create an effect block; returns the block index or -1. `status` receives the PID
     /// block-load status usage (success/full/error) when available.
     int createEffect(uint16_t effect_type_usage, uint16_t* status = nullptr);

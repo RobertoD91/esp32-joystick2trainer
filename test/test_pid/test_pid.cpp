@@ -98,6 +98,7 @@ static void test_ffb2_output_and_feature_layout() {
     TEST_ASSERT_EQUAL_UINT32(1, d.reportBytes(ReportType::Output, 13));  // Device Gain
     TEST_ASSERT_EQUAL_UINT32(3, d.reportBytes(ReportType::Feature, 1));  // Create New Effect
     TEST_ASSERT_EQUAL_UINT32(4, d.reportBytes(ReportType::Feature, 2));  // Block Load
+    TEST_ASSERT_EQUAL_UINT32(4, d.reportBytes(ReportType::Feature, 3));  // PID Pool
     TEST_ASSERT_EQUAL_UINT32(2, d.reportBytes(ReportType::Input, 2));    // PID state
 
     // Duration is in milliseconds (seconds, exponent -3), 16 bits, 0..32767.
@@ -274,12 +275,10 @@ static void test_create_new_effect_and_block_load() {
 
 static void test_set_effect_report_spring_infinite() {
     Device dev = configuredDevice();
-    EffectParams e;
+    EffectParams e;  // defaults: per-axis form (Axes Enable X+Y, Direction Enable clear)
     e.type = kUsageEtSpring;
     e.duration_ms = 0;
     e.gain = 1.0f;
-    e.direction_enable = true;
-    e.direction = 0.0f;
     Report r;
     TEST_ASSERT_TRUE(dev.buildSetEffect(3, e, r));
     TEST_ASSERT_EQUAL_UINT32(16, r.len);
@@ -295,10 +294,30 @@ static void test_set_effect_report_spring_infinite() {
     TEST_ASSERT_EQUAL_INT32(0, readField(v, ReportType::Output, kPagePid, kUsageTriggerButton, 1));
     TEST_ASSERT_EQUAL_INT32(1, readField(v, ReportType::Output, kPageGenericDesktop, kUsageX, 1));
     TEST_ASSERT_EQUAL_INT32(1, readField(v, ReportType::Output, kPageGenericDesktop, kUsageY, 1));
-    TEST_ASSERT_EQUAL_INT32(1, readField(v, ReportType::Output, kPagePid, kUsageDirectionEnable, 1));
+    TEST_ASSERT_EQUAL_INT32(0, readField(v, ReportType::Output, kPagePid, kUsageDirectionEnable, 1));
     TEST_ASSERT_EQUAL_INT32(0, readField(v, ReportType::Output, kPageOrdinal, 1, 1));
     TEST_ASSERT_EQUAL_INT32(0, readField(v, ReportType::Output, kPagePid, kUsageStartDelay, 1));
-    TEST_ASSERT_EQUAL_HEX8(0x07, r.data[11]);  // payload byte 10: bit0 X, bit1 Y, bit2 direction enable
+    TEST_ASSERT_EQUAL_HEX8(0x03, r.data[11]);  // payload byte 10: bit0 X, bit1 Y, bit2 direction enable
+    const uint8_t expected[16] = {0x01, 0x03, 0x08, 0xFF, 0xFF, 0x00, 0x00, 0x00,
+                                  0x00, 0xFF, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00};
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(expected, r.data, 16);
+}
+
+static void test_set_effect_report_linux_direction_form() {
+    // What hid-pidff sends for every effect: Direction Enable set, Axes Enable bits clear,
+    // direction 0 (north). Selected with `ffb.direction 1`.
+    Device dev = configuredDevice();
+    EffectParams e;
+    e.type = kUsageEtSpring;
+    e.linuxDirectionForm();
+    Report r;
+    TEST_ASSERT_TRUE(dev.buildSetEffect(3, e, r));
+    std::vector<uint8_t> v(r.data, r.data + r.len);
+    TEST_ASSERT_EQUAL_INT32(0, readField(v, ReportType::Output, kPageGenericDesktop, kUsageX, 1));
+    TEST_ASSERT_EQUAL_INT32(0, readField(v, ReportType::Output, kPageGenericDesktop, kUsageY, 1));
+    TEST_ASSERT_EQUAL_INT32(1, readField(v, ReportType::Output, kPagePid, kUsageDirectionEnable, 1));
+    TEST_ASSERT_EQUAL_INT32(0, readField(v, ReportType::Output, kPageOrdinal, 1, 1));
+    TEST_ASSERT_EQUAL_HEX8(0x04, r.data[11]);
 }
 
 static void test_set_effect_report_sine_timed() {
@@ -307,7 +326,7 @@ static void test_set_effect_report_sine_timed() {
     e.type = kUsageEtSine;
     e.duration_ms = 600;
     e.gain = 0.5f;
-    e.direction = 0.25f;  // east
+    e.linuxDirectionForm(0.25f);  // east
     e.start_delay_ms = 100;
     Report r;
     TEST_ASSERT_TRUE(dev.buildSetEffect(1, e, r));
@@ -315,10 +334,45 @@ static void test_set_effect_report_sine_timed() {
     TEST_ASSERT_EQUAL_HEX8(4, r.data[2]);
     TEST_ASSERT_EQUAL_INT32(600, readField(v, ReportType::Output, kPagePid, kUsageDuration, 1));
     TEST_ASSERT_EQUAL_INT32(128, readField(v, ReportType::Output, kPagePid, kUsageGain, 1));
+    TEST_ASSERT_EQUAL_HEX8(0x04, r.data[11]);  // direction enable only
     TEST_ASSERT_EQUAL_INT32(64, readField(v, ReportType::Output, kPageOrdinal, 1, 1));
     TEST_ASSERT_EQUAL_INT32(100, readField(v, ReportType::Output, kPagePid, kUsageStartDelay, 1));
     e.type = 0x29;  // not an effect type
     TEST_ASSERT_FALSE(dev.buildSetEffect(1, e, r));
+}
+
+static void test_pool_report() {
+    Device dev = configuredDevice();
+    TEST_ASSERT_TRUE(dev.hasPoolReport());
+    TEST_ASSERT_EQUAL_UINT8(3, dev.poolReportId());
+    TEST_ASSERT_EQUAL_UINT32(5, dev.poolReportLen());
+    // id 3: RAM pool size (16 bits), simultaneous effects max (8), device managed (bit 24),
+    // shared parameter blocks (bit 25).
+    Report in;
+    const uint8_t managed[5] = {0x03, 0x00, 0x10, 0x0A, 0x03};
+    std::memcpy(in.data, managed, 5);
+    in.len = 5;
+    in.id = 3;
+    PoolInfo p;
+    TEST_ASSERT_TRUE(dev.parsePool(in, p));
+    TEST_ASSERT_EQUAL_UINT32(4096, p.ram_pool_size);
+    TEST_ASSERT_EQUAL_UINT32(10, p.simultaneous_max);
+    TEST_ASSERT_TRUE(p.has_device_managed_flag);
+    TEST_ASSERT_TRUE(p.device_managed);
+    TEST_ASSERT_TRUE(p.shared_parameter_blocks);
+    in.data[4] = 0x00;
+    TEST_ASSERT_TRUE(dev.parsePool(in, p));
+    TEST_ASSERT_TRUE(p.has_device_managed_flag);
+    TEST_ASSERT_FALSE(p.device_managed);
+    in.data[0] = 0x02;  // wrong report
+    TEST_ASSERT_FALSE(dev.parsePool(in, p));
+
+    FakeTransport t;
+    Controller ctl(dev, t);
+    TEST_ASSERT_FALSE(ctl.readPool(p));                    // device does not answer
+    t.block_load_answer = {0x03, 0x00, 0x10, 0x0A, 0x03};  // the fake answers any feature id it holds
+    TEST_ASSERT_TRUE(ctl.readPool(p));
+    TEST_ASSERT_TRUE(p.device_managed);
 }
 
 static void test_set_condition_report() {
@@ -432,9 +486,10 @@ static void test_controller_creates_spring_and_starts_it() {
     c.negative_coeff = 0.6f;
     TEST_ASSERT_TRUE(ctl.uploadCondition(block, kUsageEtSpring, e, c));
     TEST_ASSERT_EQUAL_UINT32(4, t.sent.size());
-    TEST_ASSERT_EQUAL_HEX8(1, t.sent[1].bytes[0]);  // set effect
-    TEST_ASSERT_EQUAL_HEX8(8, t.sent[1].bytes[2]);  // spring
-    TEST_ASSERT_EQUAL_HEX8(3, t.sent[2].bytes[0]);  // condition axis 0
+    TEST_ASSERT_EQUAL_HEX8(1, t.sent[1].bytes[0]);      // set effect
+    TEST_ASSERT_EQUAL_HEX8(8, t.sent[1].bytes[2]);      // spring
+    TEST_ASSERT_EQUAL_HEX8(0x03, t.sent[1].bytes[11]);  // per-axis form matches the two condition blocks
+    TEST_ASSERT_EQUAL_HEX8(3, t.sent[2].bytes[0]);      // condition axis 0
     TEST_ASSERT_EQUAL_HEX8(0, t.sent[2].bytes[2] & 0x0F);
     TEST_ASSERT_EQUAL_HEX8(3, t.sent[3].bytes[0]);  // condition axis 1
     TEST_ASSERT_EQUAL_HEX8(1, t.sent[3].bytes[2] & 0x0F);
@@ -493,7 +548,9 @@ int main() {
     RUN_TEST(test_device_control_and_gain_reports);
     RUN_TEST(test_create_new_effect_and_block_load);
     RUN_TEST(test_set_effect_report_spring_infinite);
+    RUN_TEST(test_set_effect_report_linux_direction_form);
     RUN_TEST(test_set_effect_report_sine_timed);
+    RUN_TEST(test_pool_report);
     RUN_TEST(test_set_condition_report);
     RUN_TEST(test_set_periodic_and_operation_reports);
     RUN_TEST(test_decode_state_report);

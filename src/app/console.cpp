@@ -239,8 +239,8 @@ int cmdFfb(int argc, char** argv) {
     }
     const FfbController::Status f = g_ctx->ffb->status();
     const rc::Config cfg = g_ctx->config->get();
-    std::printf("config     : enabled %d, spring %u%%, gain %u%%, deadband %u%%\n", cfg.ffb.enabled, cfg.ffb.spring_pct,
-                cfg.ffb.gain_pct, cfg.ffb.deadband_pct);
+    std::printf("config     : enabled %d, spring %u%%, gain %u%%, deadband %u%%, direction form %d\n", cfg.ffb.enabled,
+                cfg.ffb.spring_pct, cfg.ffb.gain_pct, cfg.ffb.deadband_pct, cfg.ffb.direction_form);
     if (!f.device_connected) {
         std::printf("device     : none\n");
         return 0;
@@ -251,8 +251,16 @@ int cmdFfb(int argc, char** argv) {
     }
     std::printf("device     : PID, output reports via %s, init %s\n",
                 f.out_endpoint ? "interrupt OUT endpoint" : "control SET_REPORT", f.initialised ? "ok" : "FAILED");
-    std::printf("spring     : %u%% on block %d, %s\n", f.spring_pct, f.spring_block,
-                f.spring_running ? "running" : "stopped");
+    if (f.pool_valid) {
+        std::printf("pool       : %lu bytes, %lu simultaneous effects, %s\n",
+                    static_cast<unsigned long>(f.pool.ram_pool_size),
+                    static_cast<unsigned long>(f.pool.simultaneous_max),
+                    !f.pool.has_device_managed_flag ? "management not reported"
+                    : f.pool.device_managed         ? "device managed"
+                                                    : "HOST managed (unsupported)");
+    }
+    std::printf("spring     : %u%% on block %d, %s, %s form\n", f.spring_pct, f.spring_block,
+                f.spring_running ? "running" : "stopped", f.direction_form ? "direction (Linux)" : "per-axis");
     if (f.state_valid) {
         std::printf(
             "state      : actuators %s, power %s, safety switch %s, override %s, paused %s, playing %s "
@@ -267,7 +275,9 @@ int cmdFfb(int argc, char** argv) {
     if (f.last_error[0]) {
         std::printf("last error : %s\n", f.last_error);
     }
-    std::printf("commands   : ffb test [ms]   set ffb.spring <0-100>   set ffb.gain <0-100>   set ffb.enabled 0/1\n");
+    std::printf(
+        "commands   : ffb test [ms]   set ffb.spring <0-100>   set ffb.gain <0-100>   set ffb.enabled 0/1   "
+        "set ffb.direction 0/1\n");
     return 0;
 }
 

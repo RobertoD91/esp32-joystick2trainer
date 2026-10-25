@@ -325,7 +325,10 @@ bool hid_host_device_has_output_endpoint(hid_host_device_handle_t hid_dev_handle
  *
  * The buffer must start with the report ID byte when the device uses report IDs, exactly as
  * for SET_REPORT. Must not be called from the HID driver's own callbacks (the completion is
- * dispatched by the driver task).
+ * dispatched by the driver task). Calls are serialised; the interface cannot be closed while a
+ * report is being submitted. After a failure the endpoint is recovered automatically (a
+ * timed-out transfer is cancelled, a stalled endpoint is cleared on both sides) so that the
+ * next call can succeed; the failed report itself is not retried.
  *
  * @param[in] hid_dev_handle HID device handle (must be opened)
  * @param[in] data           Report bytes
@@ -334,6 +337,7 @@ bool hid_host_device_has_output_endpoint(hid_host_device_handle_t hid_dev_handle
  * @return
  *      - ESP_OK on success
  *      - ESP_ERR_NOT_SUPPORTED when the interface has no OUT endpoint (use hid_class_request_set_report)
+ *      - ESP_ERR_INVALID_ARG when the handle is not (or no longer) a tracked interface
  *      - ESP_ERR_TIMEOUT, ESP_FAIL on transfer errors
  */
 esp_err_t hid_host_device_output_report(hid_host_device_handle_t hid_dev_handle,

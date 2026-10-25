@@ -74,9 +74,13 @@ as the SideWinder Force Feedback 2. Changes apply immediately; `save` persists t
 | `ffb.spring` | 0..100 % | 60 | strength of the centring spring (condition effect coefficients). 0 leaves the stick loose |
 | `ffb.gain` | 0..100 % | 100 | PID device gain applied to every effect |
 | `ffb.deadband` | 0..50 % | 0 | zone around the centre without spring force |
+| `ffb.direction` | bool | 0 | how the spring's Set Effect report is encoded. 0 = per-axis form of the PID specification (Axes Enable X and Y, one condition block per axis). 1 = the form the Linux `hid-pidff` driver sends (Direction Enable set, direction north, axes bits clear). Try 1 if a device centres only one axis |
 
 The spring is re-created on every connection; `ffb` on the console shows whether the device
-accepted it and what the PID state report says (actuator power, safety switch, effect playing).
+accepted it, the device's effect memory (PID pool) and what the PID state report says (actuator
+power, safety switch, effect playing). Output reports use the interrupt OUT endpoint when the
+device has one; after a failed transfer the firmware retries over the control pipe
+(`SET_REPORT`) and stays there for the rest of the connection (`ffb` shows which one is in use).
 
 ## Channel keys (`ch1` … `ch16`)
 

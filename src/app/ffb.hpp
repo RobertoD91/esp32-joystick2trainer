@@ -33,6 +33,9 @@ public:
         bool state_valid = false;
         hid::pid::State state{};
         uint32_t state_reports = 0;
+        bool pool_valid = false;
+        hid::pid::PoolInfo pool{};
+        bool direction_form = false;  ///< spring sent in the Linux-driver form (ffb.direction)
         char last_error[48] = {0};
     };
 
@@ -69,6 +72,8 @@ private:
     public:
         void attach(hid_host_device_handle_t handle, bool use_out_endpoint);
         void detach();
+        /// Output reports currently go over the interrupt OUT endpoint (false: SET_REPORT).
+        bool usesOutEndpoint() const { return out_endpoint_; }
         bool sendOutput(const hid::pid::Report& r) override;
         bool setFeature(const hid::pid::Report& r) override;
         bool getFeature(uint8_t report_id, std::size_t expected_len, hid::pid::Report& out) override;

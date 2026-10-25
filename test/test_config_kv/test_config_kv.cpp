@@ -28,7 +28,7 @@ static std::vector<std::pair<std::string, std::string>> dump(const Config& cfg, 
 static void test_dump_roundtrip_reproduces_defaults() {
     const Config original = defaultConfig();
     const auto entries = dump(original);
-    TEST_ASSERT_EQUAL_UINT32(23 + 16 * 9, entries.size());
+    TEST_ASSERT_EQUAL_UINT32(24 + 16 * 9, entries.size());
 
     Config rebuilt;  // all zero except version -> everything differs from the defaults
     rebuilt.mapping = MappingConfig{};
@@ -78,6 +78,11 @@ static void test_global_keys() {
     TEST_ASSERT_EQUAL(kv::Result::BadValue, kv::set(cfg, "ffb.gain", "101", err, sizeof(err)));
     TEST_ASSERT_TRUE(kv::get(cfg, "ffb.deadband", out, sizeof(out)));
     TEST_ASSERT_EQUAL_STRING("0", out);
+    TEST_ASSERT_FALSE(cfg.ffb.direction_form);
+    TEST_ASSERT_EQUAL(kv::Result::Ok, kv::set(cfg, "ffb.direction", "1", err, sizeof(err)));
+    TEST_ASSERT_TRUE(cfg.ffb.direction_form);
+    TEST_ASSERT_TRUE(kv::get(cfg, "ffb.direction", out, sizeof(out)));
+    TEST_ASSERT_EQUAL_STRING("1", out);
 }
 
 static void test_channel_keys() {

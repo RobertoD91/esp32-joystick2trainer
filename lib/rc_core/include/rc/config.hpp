@@ -33,7 +33,7 @@ namespace rc {
 
 /// Bump whenever the layout of Config changes; stored blobs with another version are discarded
 /// (except for the one-step migrations handled by the config store).
-constexpr uint32_t kConfigVersion = 4;
+constexpr uint32_t kConfigVersion = 5;
 
 /// What the outputs do while no valid joystick input is available.
 enum class FailsafeMode : uint8_t {
@@ -72,6 +72,10 @@ struct FfbConfig {
     uint8_t gain_pct = 100;
     /// Dead band of the spring around the centre, 0 .. 50 % of travel.
     uint8_t deadband_pct = 0;
+    /// Encode the spring the way the Linux driver does (Set Effect with Direction Enable set
+    /// and the Axes Enable bits clear) instead of the per-axis form of the PID specification
+    /// (Axes Enable X and Y, Direction Enable clear). Try 1 if a device centres one axis only.
+    bool direction_form = false;
 };
 
 struct Config {
@@ -88,7 +92,8 @@ struct Config {
     int8_t led_gpio = J2T_LED_GPIO;
     /// Print decoded joystick input on the console (debug aid).
     bool log_input = false;
-    /// Force feedback. Appended last so that version-3 blobs can be migrated by prefix copy.
+    /// Force feedback. Appended last so that older blobs can be migrated by prefix copy
+    /// (version 3 ended before `ffb`, version 4 after its first four bytes).
     FfbConfig ffb{};
 };
 

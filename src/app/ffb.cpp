@@ -33,15 +33,29 @@ bool FfbController::HidTransport::sendOutput(const hid::pid::Report& r) {
     if (handle_ == nullptr || r.len == 0) {
         return false;
     }
-    esp_err_t err;
     if (out_endpoint_) {
-        err = hid_host_device_output_report(handle_, r.data, r.len, kTransferTimeoutMs);
-    } else {
-        err = hid_class_request_set_report(handle_, HID_REPORT_TYPE_OUTPUT, r.id, const_cast<uint8_t*>(r.data), r.len);
+        const esp_err_t err = hid_host_device_output_report(handle_, r.data, r.len, kTransferTimeoutMs);
+        if (err == ESP_OK) {
+            return true;
+        }
+        if (err == ESP_ERR_INVALID_ARG) {
+            return false;  // interface gone: no point in trying the control pipe
+        }
+        // The driver has recovered the endpoint for the next report; this one is retried over
+        // the control pipe, which every HID device supports. If that works, stay on it: a
+        // device that keeps failing on its OUT endpoint is not worth a timeout per report.
+        ESP_LOGW(TAG, "output report %u failed on the OUT endpoint (%s), trying SET_REPORT", r.id,
+                 esp_err_to_name(err));
     }
+    const esp_err_t err =
+        hid_class_request_set_report(handle_, HID_REPORT_TYPE_OUTPUT, r.id, const_cast<uint8_t*>(r.data), r.len);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "output report %u failed: %s", r.id, esp_err_to_name(err));
         return false;
+    }
+    if (out_endpoint_) {
+        ESP_LOGW(TAG, "output reports now go over the control pipe");
+        out_endpoint_ = false;
     }
     return true;
 }
@@ -195,6 +209,9 @@ void FfbController::run() {
                 handleRumble(m.arg);
                 break;
         }
+        if (st_.pid_device) {
+            st_.out_endpoint = transport_.usesOutEndpoint();
+        }
         publish();
     }
 }
@@ -225,6 +242,18 @@ void FfbController::handleConnect(hid_host_device_handle_t handle) {
     st_.initialised = ctl.initialise();
     if (!st_.initialised) {
         setError("device initialisation failed");
+    }
+    // Diagnostics for the bench test: effect memory and who manages it. With a host-managed
+    // pool the host would have to lay out the parameter blocks itself, which (like the Linux
+    // driver) this code does not do; the SideWinder FFB2 is device managed.
+    st_.pool_valid = ctl.readPool(st_.pool);
+    if (st_.pool_valid) {
+        ESP_LOGI(TAG, "PID pool: %lu bytes, %lu simultaneous effects, %s",
+                 static_cast<unsigned long>(st_.pool.ram_pool_size),
+                 static_cast<unsigned long>(st_.pool.simultaneous_max),
+                 !st_.pool.has_device_managed_flag ? "pool management not reported"
+                 : st_.pool.device_managed         ? "device managed"
+                                                   : "HOST managed (unsupported, effects may not load)");
     }
     handleApply();
 }
@@ -275,10 +304,14 @@ void FfbController::handleApply() {
             return;
         }
     }
-    hid::pid::EffectParams e;
+    hid::pid::EffectParams e;  // per-axis form: Axes Enable X+Y, one condition block per axis
     e.type = hid::pid::kUsageEtSpring;
     e.duration_ms = 0;  // infinite
     e.gain = 1.0f;
+    st_.direction_form = cfg.ffb.direction_form;
+    if (st_.direction_form) {
+        e.linuxDirectionForm();  // what hid-pidff sends: Direction Enable, direction north
+    }
     hid::pid::Condition c;
     c.positive_coeff = static_cast<float>(st_.spring_pct) / 100.0f;
     c.negative_coeff = c.positive_coeff;
@@ -289,7 +322,8 @@ void FfbController::handleApply() {
     }
     st_.spring_running = true;
     st_.last_error[0] = '\0';
-    ESP_LOGI(TAG, "centring spring %u %% on effect block %d", st_.spring_pct, st_.spring_block);
+    ESP_LOGI(TAG, "centring spring %u %% on effect block %d (%s form)", st_.spring_pct, st_.spring_block,
+             st_.direction_form ? "direction" : "per-axis");
 }
 
 void FfbController::handleRumble(uint32_t ms) {
@@ -312,6 +346,7 @@ void FfbController::handleRumble(uint32_t ms) {
     hid::pid::EffectParams e;
     e.duration_ms = ms;
     e.gain = 1.0f;
+    e.linuxDirectionForm();  // a vibration has a direction, not per-axis parameters
     hid::pid::Periodic p;
     p.magnitude = 1.0f;
     p.period_ms = 50;

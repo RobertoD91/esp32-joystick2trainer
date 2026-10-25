@@ -16,11 +16,27 @@ All notable changes to this project are documented here. The format follows
 - Vendored copy of Espressif's `usb_host_hid` driver (`components/usb_host_hid`) with an
   interrupt OUT endpoint API for output reports (see its `NOTICE.md`).
 - README: first-flight record, force feedback documentation, device support assessment.
+- `ffb.direction` selects how the spring's Set Effect report is encoded: per-axis form of the
+  PID specification (default) or the form the Linux driver sends.
+- The PID pool feature report (effect memory, device/host managed) is read on connection and
+  shown by `ffb`.
+- `docs/device-support.md`: what "universal joystick support" would take.
 
 ### Changed
 
-- Configuration blob version 4 (adds `FfbConfig`). Version-3 blobs saved by 0.9.0 are
-  migrated automatically; user settings are preserved.
+- Configuration blob version 5 (adds `FfbConfig`, then `ffb.direction`). Version-3 blobs
+  saved by 0.9.0 and version-4 blobs are migrated automatically; user settings are preserved.
+- Spring effects are uploaded in the per-axis form (Axes Enable X and Y, Direction Enable
+  clear) instead of a mix of both forms; vibrations use the direction form.
+
+### Fixed
+
+- Vendored HID driver: an output report that timed out or was rejected (STALL) left the OUT
+  endpoint unusable until re-plug; the endpoint is now recovered and the OUT endpoint is
+  quiesced when the interface is stopped or closed. The submit path runs under the driver's
+  open/close mutex, closing a use-after-free window against a concurrent disconnect, and the
+  install failure path no longer leaks two semaphores.
+- Force feedback falls back to control-pipe `SET_REPORT` when the OUT endpoint fails.
 
 ## [0.9.0] - 2026-09-20
 

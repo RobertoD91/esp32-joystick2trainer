@@ -306,12 +306,14 @@ does what Windows and Linux do:
 | `ffb.spring` | 60 | spring strength 0..100 % (0 = no spring, the stick stays loose) |
 | `ffb.gain` | 100 | overall device gain 0..100 % |
 | `ffb.deadband` | 0 | zone around the centre without spring force, 0..50 % |
-| `ffb` | – | console: PID status, transport in use, actuator power, last error |
+| `ffb.direction` | 0 | encoding of the spring's Set Effect: 0 = per-axis form of the PID specification (Axes Enable X+Y, one condition block per axis), 1 = the Linux `hid-pidff` form (Direction Enable, direction north). Flip to 1 if the stick centres on one axis only |
+| `ffb` | – | console: PID status, transport in use, effect memory, actuator power, last error |
 | `ffb test [ms]` | 600 ms | console: vibration test |
 
 `set ffb.*` keys apply immediately (and persist with `save`). Output reports travel over the
-joystick's interrupt OUT endpoint when it has one (the SideWinder does), falling back to
-control-pipe SET_REPORT otherwise; this needed a small addition to Espressif's HID host driver,
+joystick's interrupt OUT endpoint when it has one (the SideWinder does); if a transfer fails the
+driver recovers the endpoint and the report is retried over control-pipe SET_REPORT, which then
+stays in use for that connection. This needed a small addition to Espressif's HID host driver,
 kept as a vendored copy in `components/usb_host_hid` (see its `NOTICE.md`).
 
 Requirements and caveats:
@@ -342,12 +344,14 @@ into three categories:
 What a database *can* add is semantics, not decoding: the
 [SDL game controller DB](https://github.com/mdqinc/SDL_GameControllerDB) maps each known gamepad
 (keyed by vendor/product) to a standard layout (left stick, A/B/X/Y, triggers), which is what
-"universal" means for gamepads. Its text file is about 400 kB; it would fit the 8 MB flash but
-needs the GUID matching logic and brings nothing for joysticks like the SideWinder, which SDL
-does not cover. The planned, lighter alternative is a small built-in **profile table keyed on
-VID:PID** that preselects a sensible channel mapping and inversions per device (the current
-defaults are, in effect, the SideWinder profile), with the generic parser as the fallback for
-everything else.
+"universal" means for gamepads. Its text file is about 610 kB (46 kB compressed); it would fit
+the 8 MB flash but needs the GUID matching logic, uses per-operating-system axis indices rather
+than HID usages, and brings nothing for joysticks like the SideWinder, the Extreme 3D Pro or any
+HOTAS, which it does not cover. The planned, lighter alternative is a small built-in **profile
+table keyed on VID:PID** that preselects a sensible channel mapping and inversions per device
+(the current defaults are, in effect, the SideWinder profile), with the generic parser as the
+fallback for everything else. The full assessment, with a compatibility table built from the
+Linux driver sources and a roadmap, is in [docs/device-support.md](docs/device-support.md).
 
 ## Architecture
 

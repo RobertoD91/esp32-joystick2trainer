@@ -83,7 +83,7 @@ effects are out of scope.
 
 | Item | Notes |
 |------|-------|
-| ESP32-S3 dev board | Tested build target: `esp32-s3-devkitc-1`. Any ESP32-S3 board that exposes the **native USB** pins (GPIO19/20) works. |
+| ESP32-S3 dev board | Tested build target: `esp32-s3-devkitc-1`. Any ESP32-S3 board that exposes the **native USB** pins (GPIO19/20) works. Other chips: see [docs/hardware-options.md](docs/hardware-options.md) (short version: ESP32-S2 yes, RP2040/RP2350 and ESP32-C3/C5 no). |
 | USB OTG cable **with power input** | Micro-USB (USB-C on some boards) OTG host plug + USB-A female for the joystick + a power input. See [Powering the joystick](#powering-the-joystick): a plain OTG adapter is not enough on the DevKitC-1. |
 | USB-to-UART link | The DevKitC-1's second connector labelled "UART"; used for flashing, logs and the configuration console. |
 | 3.5 mm TRS plug | For the CPPM trainer input of the radio. |
@@ -419,7 +419,9 @@ The full evaluation of the existing projects is in [docs/research.md](docs/resea
 - Only the SBUS-on-AUX path has been validated on a radio so far (and flown); the CPPM jack
   output and the S.PORT path still need a bench test (see [Tested setups](#tested-setups)).
 - Possible extensions: per-device profiles keyed on VID/PID, XInput (Xbox) controllers, a
-  Web/USB configuration UI, CRSF output, multiple joysticks merged into one frame.
+  Web/USB configuration UI, CRSF output, multiple joysticks merged into one frame, an I2C
+  status display. Other microcontrollers and the display are discussed in
+  [docs/hardware-options.md](docs/hardware-options.md).
 
 ## Acknowledgements
 

@@ -21,6 +21,8 @@ All notable changes to this project are documented here. The format follows
 - The PID pool feature report (effect memory, device/host managed) is read on connection and
   shown by `ffb`.
 - `docs/device-support.md`: what "universal joystick support" would take.
+- `docs/hardware-options.md`: other microcontrollers (ESP32-S2/P4/C3/C5, RP2040/RP2350) and
+  an I2C status display, evaluated.
 
 ### Changed
 

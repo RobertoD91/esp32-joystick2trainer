@@ -7,6 +7,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `hardware/`: JR bay module prototype board (KiCad 7 project generated from `hardware/scripts/design.py`, Gerbers, pick-and-place, BOM, DRC report, OpenSCAD case in a standard and a lite variant) and the `esp32s3-module` PlatformIO environment (status LED on GPIO38). Not yet built or tested.
 - Force feedback for USB HID PID joysticks: the firmware creates and runs the centring
   spring (configurable strength, gain and dead band through `ffb.*`), decodes the PID state
   report and offers a vibration test (`ffb test`). Generic, descriptor driven; verified

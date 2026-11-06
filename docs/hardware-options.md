@@ -71,6 +71,8 @@ console for the information that matters at the flying site.
   per second. Configuration keys `display.sda`, `display.scl`, `display.addr`, with -1 to
   disable, like the LED.
 - Pins are available: on the DevKitC-1 the conventional pair is GPIO8 (SDA) and GPIO9 (SCL).
+  The JR bay module board (`hardware/`) brings out GPIO10 (SDA) and GPIO9 (SCL) with 4.7 k pull-ups on a
+  1.27 mm header next to the bay connector.
   No impact on the outputs: SBUS and CPPM are produced by hardware peripherals and a 400 kHz
   I2C bus does not disturb them.
 - Avoid LVGL for a status screen: more than 100 kB of flash and a lot of RAM to draw four lines

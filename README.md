@@ -84,6 +84,7 @@ effects are out of scope.
 | Item | Notes |
 |------|-------|
 | ESP32-S3 dev board | Tested build target: `esp32-s3-devkitc-1`. Any ESP32-S3 board that exposes the **native USB** pins (GPIO19/20) works. Other chips: see [docs/hardware-options.md](docs/hardware-options.md) (short version: ESP32-S2 yes, RP2040/RP2350 and ESP32-C3/C5 no). |
+| JR bay module (prototype PCB) | A 22 x 62 mm board that plugs into the radio's module bay: ESP32-S3-WROOM-1, USB-A host port, USB-C console, 2S buck, SBUS/CPPM on the bay pins and an AUX header. KiCad project, Gerbers, BOM and a printable case in [hardware/](hardware/README.md). Untested as of this release. |
 | USB OTG cable **with power input** | Micro-USB (USB-C on some boards) OTG host plug + USB-A female for the joystick + a power input. See [Powering the joystick](#powering-the-joystick): a plain OTG adapter is not enough on the DevKitC-1. |
 | USB-to-UART link | The DevKitC-1's second connector labelled "UART"; used for flashing, logs and the configuration console. |
 | 3.5 mm TRS plug | For the CPPM trainer input of the radio. |

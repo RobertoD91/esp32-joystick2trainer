@@ -1,0 +1,42 @@
+Designator,Qty,Value,Footprint,MPN,DNP,Note
+"C1, C2",2,10uF 25V,C_0805_2012Metric,,,
+"C10, C11, C14",3,1uF,C_0402_1005Metric,,,
+C12,1,10uF 6.3V,C_0402_1005Metric,,,3V3 decoupling next to U3 pin 2
+C3,1,100nF 50V,C_0402_1005Metric,,,
+"C4, C13, C15, C16",4,100nF,C_0402_1005Metric,,,8.4 V -> 1.5 V on GPIO1 (ADC)
+"C5, C7",2,22uF 10V,C_0805_2012Metric,,,C5 + C7 = 44 uF buck output capacitance (datasheet table 7-2); also the VBUS switch input reservoir
+C6,1,75pF,C_0402_1005Metric,,,feed-forward across R1 (datasheet table 7-2)
+"C8, C9",2,47uF 10V,C_1210_3225Metric,,,USB host port bulk capacitance (ceramic compromise for the 120 uF requirement)
+"D2, D4",2,USBLC6-2SC6,SOT-23-6,USBLC6-2SC6,,"D+ and D- pads line up with the USB-A pins; rows: D+/GND/D- towards the USB-A, D+/VBUS/D- towards the module"
+D5,1,green,LED_0603_1608Metric,,,status LED (led.gpio 38)
+D6,1,red,LED_0603_1608Metric,,,3.3 V present
+D7,1,B5819W,D_SOD-123,B5819W,,"USB-C 5 V ORed into the 5 V rail through a Schottky: reverse biased while the buck runs, about 4.5 V on the rail when only the USB-C is plugged (bench use)"
+F1,1,1.1A hold,Fuse_1206_3216Metric,1206L110,,next to the bay header: the unfused net stays short
+F2,1,0.75A hold,Fuse_1206_3216Metric,1206L075,,
+J1,1,USB-A joystick,USB_A_Molex_67643_Horizontal,Molex 67643-0910 or equivalent right-angle USB-A receptacle,,
+J2,1,USB-C console,USB_C_Receptacle_HRO_TYPE-C-31-M-12,HRO TYPE-C-31-M-12,,position keeps the 0.3 mm pads on the router's 0.1 mm grid
+J3,1,AUX,PinHeader_1x03_P2.54mm_Vertical_SMD_Pin1Left,,,"GND / SBUS / CPPM: AUX serial port cable, or a cable to a 3.5 mm plug for the trainer jack; plugs from the back face"
+J4,1,I2C OLED,PinHeader_1x04_P1.27mm_Vertical,1.27 mm pitch 1x4 pin header (or solder the display cable directly),,GND VCC SCL SDA for a 0.91in 128x32 SSD1306 module; pin 1 nearest the bay header
+J5,1,JR bay,PinHeader_1x05_P2.54mm_Horizontal,"2.54 mm right-angle header, long pins",,"Pin 1 PPM, 2 heartbeat, 3 VBAT, 4 GND, 5 S.PORT: verify on the radio before bridging JP1/JP2"
+JP1,1,pin2: GND|HB,SolderJumper-3_P1.3mm_Open_RoundedPad1.0x1.5mm,,,"bridge 2-3 (HB) when pin 2 is the heartbeat, 1-2 (GND) when the bay order is mirrored"
+JP2,1,pin4: GND|HB,SolderJumper-3_P1.3mm_Open_RoundedPad1.0x1.5mm,,,"bridge 1-2 (GND) for the standard order, 2-3 (HB) when mirrored"
+L1,1,10uH 2.3A,L_Sunlord_SWPA5040S,SWPA5040S100MT,,"5x5x4 mm; SWPA5030S100MT (3 mm high, 1.5 A sat) if the case is too thin"
+Q1,1,AO3407A,SOT-23,AO3407A,,Reverse polarity protection (Vgs max 20 V: 2S battery packs only)
+Q5,1,AO3401A,SOT-23,AO3401A,,"VBUS switch, on by default"
+Q6,1,2N7002W,SOT-323_SC-70,2N7002W,,
+"Q7, Q8",2,BC847W,SOT-323_SC-70,BC847W,,auto-reset: EN; auto-reset: IO0
+"R1, R7, R8, R22",4,100k,R_0402_1005Metric,,,pull-up: joystick powered even before the firmware runs; GPIO2 low cuts VBUS
+"R10, R11",2,10k,R_0402_1005Metric,,,
+"R12, R13",2,12k,R_0402_1005Metric,,,
+"R14, R15",2,5.1k,R_0402_1005Metric,,,
+"R16, R17, R18, R20, R21, R24",6,1k,R_0402_1005Metric,,,radio PPM/CRSF output into a spare GPIO (future use)
+R2,1,13.3k,R_0402_1005Metric,,,
+R23,1,22k,R_0402_1005Metric,,,
+R25,1,2.2k,R_0402_1005Metric,,,
+"R26, R27",2,4.7k,R_0402_1005Metric,,,omit if the display module has its own pull-ups
+SW1,1,RESET,SW_Push_1P1T_NO_CK_KMR2,KMR221GLFS,,
+SW2,1,BOOT,SW_Push_1P1T_NO_CK_KMR2,KMR221GLFS,,
+U1,1,TPS54202,SOT-23-6,TPS54202DDCR,,EN left floating = enabled (internal pull-up)
+U2,1,AP2112K-3.3,SOT-23-5,AP2112K-3.3TRG1,,
+U3,1,ESP32-S3-WROOM-1-N8,ESP32-S3-WROOM-1,ESP32-S3-WROOM-1-N8,,"8 MB flash, same as the firmware's esp32s3 target. Radio unused: antenna keep-out not applied."
+U4,1,CH340C,SOIC-16_3.9x9.9mm_P1.27mm,CH340C,,"3.3 V operation: V3 tied to VCC. Pins 1-8 (UART, USB) on the row facing the module, 9-16 (DTR/RTS) facing the USB-A"
